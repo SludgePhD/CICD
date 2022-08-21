@@ -29,6 +29,11 @@ fn try_main() -> Result<()> {
     }
 
     {
+        let _s = Section::new("BUILD_DOCS");
+        shell("cargo doc --workspace")?;
+    }
+
+    {
         let _s = Section::new("TEST");
         shell("cargo test --workspace")?;
     }
