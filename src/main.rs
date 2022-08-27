@@ -15,6 +15,7 @@ fn main() {
 }
 
 fn try_main() -> Result<()> {
+    let check_only = env::var_os("CICD_CHECK_ONLY").is_some();
     let cwd = env::current_dir()?;
     let cargo_toml = cwd.join("Cargo.toml");
     assert!(
@@ -23,7 +24,10 @@ fn try_main() -> Result<()> {
         cwd.display()
     );
 
-    {
+    if check_only {
+        let _s = Section::new("CHECK");
+        shell("cargo check --workspace")?;
+    } else {
         let _s = Section::new("BUILD");
         shell("cargo test --workspace --no-run")?;
     }
@@ -33,7 +37,7 @@ fn try_main() -> Result<()> {
         shell("cargo doc --workspace")?;
     }
 
-    {
+    if !check_only {
         let _s = Section::new("TEST");
         shell("cargo test --workspace")?;
     }
