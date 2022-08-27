@@ -1,6 +1,6 @@
 [package]
 name = "sludge-cicd"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 repository = "https://github.com/SludgePhD/CICD"
 description = "Personal CI/CD tool for Rust crates"
