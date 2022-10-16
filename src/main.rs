@@ -50,6 +50,7 @@ fn try_main() -> Result<()> {
 
         let packages = find_packages()?;
         assert!(!packages.is_empty());
+        eprintln!("publishable packages in workspace: {:?}", packages);
 
         // Did any previous release include multiple packages?
         let was_multi_package = packages.iter().any(|pkg| tags.contains(&pkg.name));
@@ -71,6 +72,7 @@ fn try_main() -> Result<()> {
             };
 
             if needs_publish(&name, &version) {
+                eprintln!("publishing {name} {version}");
                 let tag = format!("{prefix}v{version}");
                 let token = env::var("CRATES_IO_TOKEN").expect("no `CRATES_IO_TOKEN` provided");
                 shell(&format!("git tag {tag}"))?;
@@ -82,6 +84,7 @@ fn try_main() -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
 struct Package {
     name: String,
     version: String,
