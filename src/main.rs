@@ -58,9 +58,9 @@ fn try_main() -> Result<()> {
 
         let needs_publish = |pkgname: &str, version: &str| {
             if was_multi_package {
-                tags.contains(&format!("{pkgname}-v{version}"))
+                !tags.contains(&format!("{pkgname}-v{version}"))
             } else {
-                tags.contains(&format!("v{version}"))
+                !tags.contains(&format!("v{version}"))
             }
         };
 
