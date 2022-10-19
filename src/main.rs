@@ -99,7 +99,9 @@ fn find_packages() -> Result<Vec<Package>> {
             // Filter out virtual manifests and those with `publish = ...` set.
             if manifest.contains("[package]") && get_field(&manifest, "publish").is_err() {
                 let name = get_field(&manifest, "name")?.to_string();
-                let version = get_field(&manifest, "version")?.to_string();
+                let version = get_field(&manifest, "version")
+                    .or(get_field(&manifest, "package.version"))? // for workspace inheritance
+                    .to_string();
 
                 out.push(Package { name, version });
             }
