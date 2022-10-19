@@ -76,7 +76,9 @@ fn try_main() -> Result<()> {
                 let tag = format!("{prefix}v{version}");
                 let token = env::var("CRATES_IO_TOKEN").expect("no `CRATES_IO_TOKEN` provided");
                 shell(&format!("git tag {tag}"))?;
-                shell(&format!("cargo publish -p {name} --token {}", token))?;
+                shell(&format!(
+                    "cargo publish --no-verify -p {name} --token {token}"
+                ))?;
                 shell("git push --tags")?;
             }
         }
