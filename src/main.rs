@@ -91,7 +91,11 @@ struct Package {
 }
 
 fn find_packages() -> Result<Vec<Package>> {
-    fn recurse(dir: PathBuf, out: &mut Vec<Package>) -> Result<()> {
+    fn recurse(
+        dir: PathBuf,
+        out: &mut Vec<Package>,
+        workspace_version: Option<&str>,
+    ) -> Result<()> {
         let mut toml = dir.clone();
         toml.push("Cargo.toml");
         if toml.exists() {
@@ -99,9 +103,13 @@ fn find_packages() -> Result<Vec<Package>> {
             // Filter out virtual manifests and those with `publish = ...` set.
             if manifest.contains("[package]") && get_field(&manifest, "publish").is_err() {
                 let name = get_field(&manifest, "name")?.to_string();
-                let version = get_field(&manifest, "version")
-                    .or(get_field(&manifest, "package.version"))? // for workspace inheritance
-                    .to_string();
+                let version = match get_field(&manifest, "version") {
+                    Ok(version) => version.to_string(),
+                    Err(e) => match workspace_version {
+                        Some(version) => version.to_string(),
+                        None => return Err(e),
+                    },
+                };
 
                 out.push(Package { name, version });
             }
@@ -110,15 +118,28 @@ fn find_packages() -> Result<Vec<Package>> {
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
             if entry.file_type()?.is_dir() {
-                recurse(entry.path(), out)?;
+                recurse(entry.path(), out, workspace_version)?;
             }
         }
         Ok(())
     }
 
+    let workspace_version = workspace_version().ok();
     let mut out = Vec::new();
-    recurse(env::current_dir()?, &mut out)?;
+    recurse(env::current_dir()?, &mut out, workspace_version.as_deref())?;
     Ok(out)
+}
+
+fn workspace_version() -> Result<String> {
+    let mut path = env::current_dir()?;
+    path.push("Cargo.toml");
+    let manifest = fs::read_to_string(path)?;
+    if manifest.contains("[workspace]") {
+        let version = get_field(&manifest, "package.version")?;
+        Ok(version.to_string())
+    } else {
+        Err("no workspace".into())
+    }
 }
 
 fn get_field<'a>(text: &'a str, name: &str) -> Result<&'a str> {
