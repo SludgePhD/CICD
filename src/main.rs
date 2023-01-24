@@ -16,7 +16,7 @@ fn main() {
 }
 
 fn try_main() -> Result<()> {
-    let should_publish = env::var_os("CI_ONLY").is_none();
+    let token = env::var("CRATES_IO_TOKEN");
     let check_only = env::var_os("CICD_CHECK_ONLY").is_some();
     let cwd = env::current_dir()?;
     let cargo_toml = cwd.join("Cargo.toml");
@@ -45,7 +45,12 @@ fn try_main() -> Result<()> {
     }
 
     let current_branch = shell_output("git branch --show-current")?;
-    if &current_branch == "main" && should_publish {
+    if &current_branch == "main" {
+        let Ok(token) = token else {
+            println!("no `CRATES_IO_TOKEN` set, skipping autopublish step");
+            return Ok(());
+        };
+
         let _s = Section::new("PUBLISH");
         let tags = shell_output("git tag --list")?;
 
@@ -75,7 +80,6 @@ fn try_main() -> Result<()> {
             if needs_publish(&name, &version) {
                 eprintln!("publishing {name} {version}");
                 let tag = format!("{prefix}v{version}");
-                let token = env::var("CRATES_IO_TOKEN").expect("no `CRATES_IO_TOKEN` provided");
                 shell(&format!("git tag {tag}"))?;
                 shell(&format!(
                     "cargo publish --no-verify -p {name} --token {token}"
