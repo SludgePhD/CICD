@@ -16,6 +16,7 @@ fn main() {
 }
 
 fn try_main() -> Result<()> {
+    let should_publish = env::var_os("CI_ONLY").is_none();
     let check_only = env::var_os("CICD_CHECK_ONLY").is_some();
     let cwd = env::current_dir()?;
     let cargo_toml = cwd.join("Cargo.toml");
@@ -44,7 +45,7 @@ fn try_main() -> Result<()> {
     }
 
     let current_branch = shell_output("git branch --show-current")?;
-    if &current_branch == "main" {
+    if &current_branch == "main" && should_publish {
         let _s = Section::new("PUBLISH");
         let tags = shell_output("git tag --list")?;
 
