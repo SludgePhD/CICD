@@ -107,11 +107,19 @@ fn find_packages() -> Result<Vec<Package>> {
         toml.push("Cargo.toml");
         if toml.exists() {
             let manifest = fs::read_to_string(&toml)?;
-            // Filter out virtual manifests and those with `publish = ...` set.
-            if manifest.contains("[package]") && get_field(&manifest, "publish").is_err() {
-                let name = get_field(&manifest, "name")?.to_string();
+            // Filter out virtual manifests and those with `publish = false` set.
+            if manifest.contains("[package]")
+                && !matches!(get_field(&manifest, "publish"), Ok(Value::Bool(false)))
+            {
+                let name = get_field(&manifest, "name")?
+                    .as_str()
+                    .ok_or("package name is not a string")?
+                    .to_string();
                 let version = match get_field(&manifest, "version") {
-                    Ok(version) => version.to_string(),
+                    Ok(version) => version
+                        .as_str()
+                        .ok_or("version is not a string")?
+                        .to_string(),
                     Err(e) => match workspace_version {
                         Some(version) => version.to_string(),
                         None => return Err(e),
@@ -142,20 +150,47 @@ fn workspace_version() -> Result<String> {
     path.push("Cargo.toml");
     let manifest = fs::read_to_string(path)?;
     if manifest.contains("[workspace]") {
-        let version = get_field(&manifest, "package.version")?;
+        let version = get_field(&manifest, "package.version")?
+            .as_str()
+            .ok_or("version is not a string")?;
         Ok(version.to_string())
     } else {
         Err("no workspace".into())
     }
 }
 
-fn get_field<'a>(text: &'a str, name: &str) -> Result<&'a str> {
+enum Value<'a> {
+    Str(&'a str),
+    Bool(bool),
+}
+
+impl<'a> Value<'a> {
+    fn as_str(&self) -> Option<&'a str> {
+        if let Self::Str(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+}
+
+fn get_field<'a>(text: &'a str, name: &str) -> Result<Value<'a>> {
     for line in text.lines() {
         let words = line.split_ascii_whitespace().collect::<Vec<_>>();
         match words.as_slice() {
             [n, "=", v, ..] if n.trim() == name => {
-                assert!(v.starts_with('"') && v.ends_with('"'));
-                return Ok(&v[1..v.len() - 1]);
+                let v = v.trim();
+                if v.starts_with('"') {
+                    assert!(
+                        v.ends_with('"'),
+                        "unclosed string, or trailing comment in '{line}'"
+                    );
+                    return Ok(Value::Str(&v[1..v.len() - 1]));
+                } else if v.split(|v: char| !v.is_alphanumeric()).next().unwrap() == "true" {
+                    return Ok(Value::Bool(true));
+                } else if v.split(|v: char| !v.is_alphanumeric()).next().unwrap() == "false" {
+                    return Ok(Value::Bool(false));
+                }
             }
             _ => (),
         }
