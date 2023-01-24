@@ -16,6 +16,8 @@ fn main() {
 }
 
 fn try_main() -> Result<()> {
+    let args = env::args().skip(1).collect::<Vec<_>>();
+    let args = args.join(" ");
     let token = env::var("CRATES_IO_TOKEN");
     let check_only = env::var_os("CICD_CHECK_ONLY").is_some();
     let cwd = env::current_dir()?;
@@ -28,10 +30,10 @@ fn try_main() -> Result<()> {
 
     if check_only {
         let _s = Section::new("CHECK");
-        shell("cargo check --workspace")?;
+        shell(&format!("cargo check --workspace {args}"))?;
     } else {
         let _s = Section::new("BUILD");
-        shell("cargo test --workspace --no-run")?;
+        shell(&format!("cargo test --workspace --no-run {args}"))?;
     }
 
     {
@@ -41,7 +43,7 @@ fn try_main() -> Result<()> {
 
     if !check_only {
         let _s = Section::new("TEST");
-        shell("cargo test --workspace")?;
+        shell(&format!("cargo test --workspace {args}"))?;
     }
 
     let current_branch = shell_output("git branch --show-current")?;
@@ -78,6 +80,10 @@ fn try_main() -> Result<()> {
             };
 
             if needs_publish(&name, &version) {
+                // NB: we use `--no-verify` because we might build the workspace crates out of
+                // order, so a dependency might not be on crates.io when its dependents are
+                // verified. This isn't easily fixable without pulling it dependencies and getting
+                // the package graph somehow.
                 eprintln!("publishing {name} {version}");
                 let tag = format!("{prefix}v{version}");
                 shell(&format!("git tag {tag}"))?;
@@ -214,7 +220,10 @@ fn shell_output(cmd: &str) -> Result<String> {
 
 fn command(cmd: &str) -> Command {
     eprintln!("> {}", cmd);
-    let words = cmd.split_ascii_whitespace().collect::<Vec<_>>();
+    let words = cmd
+        .split_ascii_whitespace()
+        .filter(|arg| !arg.trim().is_empty())
+        .collect::<Vec<_>>();
     let (cmd, args) = words.split_first().unwrap();
     let mut res = Command::new(cmd);
     res.args(args);
