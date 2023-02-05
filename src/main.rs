@@ -18,7 +18,13 @@ fn main() {
 fn try_main() -> Result<()> {
     let args = env::args().skip(1).collect::<Vec<_>>();
     let args = args.join(" ");
-    let token = env::var("CRATES_IO_TOKEN");
+    let token = env::var("CRATES_IO_TOKEN").and_then(|s| {
+        if s.is_empty() {
+            Err(env::VarError::NotPresent)
+        } else {
+            Ok(s)
+        }
+    });
     let check_only = env::var_os("CICD_CHECK_ONLY").is_some();
     let cwd = env::current_dir()?;
     let cargo_toml = cwd.join("Cargo.toml");
