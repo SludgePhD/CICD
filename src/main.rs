@@ -1,8 +1,12 @@
+#[cfg(test)]
+#[macro_use]
+mod tests;
+
 use std::{
     env, fs,
     path::PathBuf,
     process::{self, Command, ExitStatus, Stdio},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 type Error = Box<dyn std::error::Error>;
@@ -16,25 +20,68 @@ fn main() {
 }
 
 fn try_main() -> Result<()> {
-    let args = env::args().skip(1).collect::<Vec<_>>();
-    let args = args.join(" ");
-    let token = env::var("CRATES_IO_TOKEN").and_then(|s| {
-        if s.is_empty() {
-            Err(env::VarError::NotPresent)
-        } else {
-            Ok(s)
-        }
-    });
-    let check_only = env::var_os("CICD_CHECK_ONLY").is_some();
     let cwd = env::current_dir()?;
-    let cargo_toml = cwd.join("Cargo.toml");
+    let args = env::args().skip(1).collect::<Vec<_>>();
+    let crates_io_token = match env::var("CRATES_IO_TOKEN") {
+        Ok(s) if s.is_empty() => None,
+        Ok(s) => Some(s),
+        Err(env::VarError::NotPresent) => None,
+        Err(e @ env::VarError::NotUnicode(_)) => return Err(e.into()),
+    };
+    let check_only = env::var_os("CICD_CHECK_ONLY").is_some();
+
+    run_cicd(Params {
+        cwd,
+        args,
+        crates_io_token,
+        check_only,
+        mock_output: None,
+    })
+}
+
+struct Params {
+    cwd: PathBuf,
+    args: Vec<String>,
+    crates_io_token: Option<String>,
+    check_only: bool,
+    mock_output: Option<Vec<(&'static str, String)>>,
+}
+
+impl Params {
+    fn shell_output(&mut self, cmd: &str) -> Result<String> {
+        eprintln!("> {}", cmd);
+
+        match &mut self.mock_output {
+            Some(output) => {
+                if output.is_empty() {
+                    panic!("missing entry for '{cmd}' in mock output list");
+                }
+                let (expected_cmd, output) = output.remove(0);
+                assert_eq!(expected_cmd, cmd);
+                Ok(output)
+            }
+            None => {
+                let output = command(cmd).stderr(Stdio::inherit()).output()?;
+                check_status(output.status)?;
+                let res = String::from_utf8(output.stdout)?;
+                let res = res.trim().to_string();
+                println!("{}", res);
+                Ok(res)
+            }
+        }
+    }
+}
+
+fn run_cicd(mut params: Params) -> Result<()> {
+    let args = params.args.join(" ");
+    let cargo_toml = params.cwd.join("Cargo.toml");
     assert!(
         cargo_toml.exists(),
         "Cargo.toml not found, cwd: {}",
-        cwd.display()
+        params.cwd.display()
     );
 
-    if check_only {
+    if params.check_only {
         let _s = Section::new("CHECK");
         shell(&format!("cargo check --workspace {args}"))?;
     } else {
@@ -47,22 +94,22 @@ fn try_main() -> Result<()> {
         shell("cargo doc --workspace")?;
     }
 
-    if !check_only {
+    if !params.check_only {
         let _s = Section::new("TEST");
         shell(&format!("cargo test --workspace {args}"))?;
     }
 
-    let current_branch = shell_output("git branch --show-current")?;
+    let current_branch = params.shell_output("git branch --show-current")?;
     if &current_branch == "main" {
-        let Ok(token) = token else {
+        let Some(token) = params.crates_io_token.clone() else {
             println!("no `CRATES_IO_TOKEN` set, skipping autopublish step");
             return Ok(());
         };
 
         let _s = Section::new("PUBLISH");
-        let tags = shell_output("git tag --list")?;
+        let tags = params.shell_output("git tag --list")?;
 
-        let packages = find_packages()?;
+        let packages = find_packages(params.cwd)?;
         assert!(!packages.is_empty());
         eprintln!("publishable packages in workspace: {:?}", packages);
 
@@ -90,8 +137,8 @@ fn try_main() -> Result<()> {
                 // order, so a dependency might not be on crates.io when its dependents are
                 // verified. This isn't easily fixable without pulling it dependencies and getting
                 // the package graph somehow.
-                eprintln!("publishing {name} {version}");
                 let tag = format!("{prefix}v{version}");
+                eprintln!("publishing {name} {version} (with git tag {tag})");
                 shell(&format!("git tag {tag}"))?;
                 shell(&format!(
                     "cargo publish --no-verify -p {name} --token {token}"
@@ -109,7 +156,7 @@ struct Package {
     version: String,
 }
 
-fn find_packages() -> Result<Vec<Package>> {
+fn find_packages(cwd: PathBuf) -> Result<Vec<Package>> {
     fn recurse(
         dir: PathBuf,
         out: &mut Vec<Package>,
@@ -123,7 +170,8 @@ fn find_packages() -> Result<Vec<Package>> {
             // `version` field.
             if manifest.contains("[package]")
                 && !matches!(get_field(&manifest, "publish"), Ok(Value::Bool(false)))
-                && get_field(&manifest, "version").is_ok()
+                && (get_field(&manifest, "version").is_ok()
+                    || get_field(&manifest, "version.workspace").is_ok())
             {
                 let name = get_field(&manifest, "name")?
                     .as_str()
@@ -144,23 +192,38 @@ fn find_packages() -> Result<Vec<Package>> {
             }
         }
 
-        for entry in fs::read_dir(&dir)? {
-            let entry = entry?;
-            if entry.file_type()?.is_dir() {
-                recurse(entry.path(), out, workspace_version)?;
+        let is_test_dir = dir
+            .to_str()
+            .expect("non-UTF-8 path")
+            .ends_with("sludge-cicd-test-projects");
+
+        if !is_test_dir {
+            for entry in fs::read_dir(&dir)? {
+                let entry = entry?;
+                if entry.file_type()?.is_dir() {
+                    recurse(entry.path(), out, workspace_version)?;
+                }
             }
         }
         Ok(())
     }
 
-    let workspace_version = workspace_version().ok();
+    if !cwd.join("Cargo.toml").exists() {
+        return Err("`Cargo.toml` does not exist in the project directory".into());
+    }
+
+    let workspace_version = workspace_version(cwd.clone()).ok();
     let mut out = Vec::new();
-    recurse(env::current_dir()?, &mut out, workspace_version.as_deref())?;
+    recurse(cwd, &mut out, workspace_version.as_deref())?;
+
+    // This list depends on iteration order, so sort it for portability in the tests.
+    out.sort_by_key(|pkg| pkg.name.clone());
+
     Ok(out)
 }
 
-fn workspace_version() -> Result<String> {
-    let mut path = env::current_dir()?;
+fn workspace_version(cwd: PathBuf) -> Result<String> {
+    let mut path = cwd;
     path.push("Cargo.toml");
     let manifest = fs::read_to_string(path)?;
     if manifest.contains("[workspace]") {
@@ -213,21 +276,16 @@ fn get_field<'a>(text: &'a str, name: &str) -> Result<Value<'a>> {
 }
 
 fn shell(cmd: &str) -> Result<()> {
-    let status = command(cmd).status()?;
-    check_status(status)
-}
-
-fn shell_output(cmd: &str) -> Result<String> {
-    let output = command(cmd).stderr(Stdio::inherit()).output()?;
-    check_status(output.status)?;
-    let res = String::from_utf8(output.stdout)?;
-    let res = res.trim().to_string();
-    println!("{}", res);
-    Ok(res)
+    eprintln!("> {}", cmd.trim());
+    if cfg!(test) {
+        return Ok(());
+    } else {
+        let status = command(cmd).status()?;
+        check_status(status)
+    }
 }
 
 fn command(cmd: &str) -> Command {
-    eprintln!("> {}", cmd);
     let words = cmd
         .split_ascii_whitespace()
         .filter(|arg| !arg.trim().is_empty())
@@ -260,7 +318,12 @@ impl Section {
 
 impl Drop for Section {
     fn drop(&mut self) {
-        println!("{}: {:.2?}", self.name, self.start.elapsed());
+        let elapsed = if cfg!(test) {
+            Duration::ZERO
+        } else {
+            self.start.elapsed()
+        };
+        println!("{}: {:.2?}", self.name, elapsed);
         println!("::endgroup::");
     }
 }
