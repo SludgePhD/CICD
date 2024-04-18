@@ -119,9 +119,11 @@ fn find_packages() -> Result<Vec<Package>> {
         toml.push("Cargo.toml");
         if toml.exists() {
             let manifest = fs::read_to_string(&toml)?;
-            // Filter out virtual manifests and those with `publish = false` set.
+            // Filter out virtual manifests, those with `publish = false` set, and those that lack a
+            // `version` field.
             if manifest.contains("[package]")
                 && !matches!(get_field(&manifest, "publish"), Ok(Value::Bool(false)))
+                && get_field(&manifest, "version").is_ok()
             {
                 let name = get_field(&manifest, "name")?
                     .as_str()
