@@ -67,6 +67,7 @@ impl Params {
             args: Vec::new(),
             crates_io_token: Some("dummy-token".into()),
             check_only: false,
+            skip_docs: false,
             mock_output: Some(vec![
                 ("git branch --show-current", "main".into()),
                 ("git tag --list", "".into()),

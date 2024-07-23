@@ -29,12 +29,14 @@ fn try_main() -> Result<()> {
         Err(e @ env::VarError::NotUnicode(_)) => return Err(e.into()),
     };
     let check_only = env::var_os("CICD_CHECK_ONLY").is_some();
+    let skip_docs = env::var_os("CICD_SKIP_DOCS").is_some();
 
     run_cicd(Params {
         cwd,
         args,
         crates_io_token,
         check_only,
+        skip_docs,
         mock_output: None,
     })
 }
@@ -44,6 +46,7 @@ struct Params {
     args: Vec<String>,
     crates_io_token: Option<String>,
     check_only: bool,
+    skip_docs: bool,
     mock_output: Option<Vec<(&'static str, String)>>,
 }
 
@@ -89,7 +92,7 @@ fn run_cicd(mut params: Params) -> Result<()> {
         shell(&format!("cargo test --workspace --no-run {args}"))?;
     }
 
-    {
+    if !params.skip_docs {
         let _s = Section::new("BUILD_DOCS");
         shell("cargo doc --workspace")?;
     }
