@@ -295,7 +295,7 @@ fn command(cmd: &str) -> Command {
         .collect::<Vec<_>>();
     let (cmd, args) = words.split_first().unwrap();
     let mut res = Command::new(cmd);
-    res.args(args);
+    res.env("CI", "1").env_remove("CRATES_IO_TOKEN").args(args);
     res
 }
 
