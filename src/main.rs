@@ -148,7 +148,7 @@ impl Params {
         eprintln!(
             "{} package{} need{} publishing: {:?}",
             to_publish.len(),
-            if to_publish.len() > 2 { "s" } else { "" },
+            if to_publish.len() >= 2 { "s" } else { "" },
             if to_publish.len() == 1 { "s" } else { "" },
             to_publish
         );

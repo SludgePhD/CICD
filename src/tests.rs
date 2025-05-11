@@ -265,7 +265,7 @@ fn workspace_inheritance() {
             ::group::PUBLISH
             existing git tags: []
             publishable packages in workspace: [version-normal@4.5.6, version-workspace@555.222.333]
-            2 package need publishing: [version-normal@4.5.6, version-workspace@555.222.333]
+            2 packages need publishing: [version-normal@4.5.6, version-workspace@555.222.333]
             publishing version-normal@4.5.6
             > cargo publish --no-verify -p version-normal --token dummy-token
             publishing version-workspace@555.222.333
@@ -309,7 +309,7 @@ fn synced_derive() {
             ::group::PUBLISH
             existing git tags: []
             publishable packages in workspace: [mylib@0.1.2, mylib-derive@0.1.2]
-            2 package need publishing: [mylib@0.1.2, mylib-derive@0.1.2]
+            2 packages need publishing: [mylib@0.1.2, mylib-derive@0.1.2]
             publishing mylib@0.1.2
             > cargo publish --no-verify -p mylib --token dummy-token
             publishing mylib-derive@0.1.2
