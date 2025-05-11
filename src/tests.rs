@@ -74,6 +74,22 @@ impl Params {
             ]),
         }
     }
+
+    fn replace_output(&mut self, cmd: &str, output: String) {
+        let (_, out) = self
+            .mock_output
+            .as_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|(command, _)| *command == cmd)
+            .expect("command not found");
+        *out = output;
+    }
+
+    fn with_tags(mut self, tags: &[&str]) -> Self {
+        self.replace_output("git tag --list", tags.join("\n"));
+        self
+    }
 }
 
 fn check_output(params: Params, expect: Expect) {
@@ -135,6 +151,32 @@ fn single_package() {
             > git tag v2.2.2
             > cargo publish --no-verify -p single-package --token dummy-token
             > git push --tags
+            PUBLISH: 0.00ns
+            ::endgroup::
+        "#]],
+    );
+}
+
+#[test]
+fn single_package_existing_tag() {
+    check_output(
+        Params::test("single-package").with_tags(&["v2.2.2"]),
+        expect![[r#"
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+            ::group::PUBLISH
+            existing git tags: ["v2.2.2"]
+            publishable packages in workspace: [single-package@2.2.2]
             PUBLISH: 0.00ns
             ::endgroup::
         "#]],
