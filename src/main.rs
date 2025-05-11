@@ -119,38 +119,56 @@ fn run_cicd(mut params: Params) -> Result<()> {
         assert!(!packages.is_empty());
         println!("publishable packages in workspace: {:?}", packages);
 
-        // Did any previous release include multiple packages?
-        let was_multi_package = packages.iter().any(|pkg| tags_string.contains(&pkg.name));
-        let is_multi_package = packages.len() != 1;
+        let same_version = packages
+            .iter()
+            .all(|pkg| pkg.version == packages[0].version);
+        let separate_tags =
+            !same_version || tags.iter().any(|tag| tag.ends_with(&packages[0].version));
 
-        let needs_publish = |pkgname: &str, version: &str| {
-            if was_multi_package {
-                !tags.contains(&&*format!("{pkgname}-v{version}"))
-            } else {
+        let to_publish = packages
+            .iter()
+            .filter(|Package { name, version }| {
                 !tags.contains(&&*format!("v{version}"))
-            }
-        };
+                    && !tags.contains(&&*format!("{name}-v{version}"))
+            })
+            .collect::<Vec<_>>();
 
-        for Package { name, version } in packages {
-            let prefix = if is_multi_package {
-                format!("{}-", name)
+        eprintln!(
+            "{} package{} need{} publishing: {:?}",
+            to_publish.len(),
+            if to_publish.len() > 2 { "s" } else { "" },
+            if to_publish.len() == 1 { "s" } else { "" },
+            to_publish
+        );
+
+        for Package { name, version } in &to_publish {
+            // If there is neither a `$package-v$version` tag, nor a `v$version` tag, the package
+            // should be published.
+            // If all publishable packages are at the same version, and no tag that ends in that
+            // version exists, we'll use a single collective `v$version` tag for all packages.
+
+            // NB: we use `--no-verify` because we might build the workspace crates out of
+            // order, so a dependency might not be on crates.io when its dependents are
+            // verified. This isn't easily fixable without pulling in dependencies and getting
+            // the package graph somehow.
+            eprintln!("publishing {name}@{version}");
+            shell(&format!(
+                "cargo publish --no-verify -p {name} --token {token}"
+            ))?;
+        }
+
+        if !to_publish.is_empty() {
+            if separate_tags {
+                for Package { name, version } in &to_publish {
+                    let tag = format!("{name}-v{version}");
+                    shell(&format!("git tag {tag}"))?;
+                }
             } else {
-                String::new()
-            };
-
-            if needs_publish(&name, &version) {
-                // NB: we use `--no-verify` because we might build the workspace crates out of
-                // order, so a dependency might not be on crates.io when its dependents are
-                // verified. This isn't easily fixable without pulling in dependencies and getting
-                // the package graph somehow.
-                let tag = format!("{prefix}v{version}");
-                eprintln!("publishing {name} {version} (with git tag {tag})");
-                shell(&format!("git tag {tag}"))?;
-                shell(&format!(
-                    "cargo publish --no-verify -p {name} --token {token}"
-                ))?;
-                shell("git push --tags")?;
+                let version = &to_publish[0].version;
+                shell(&format!("git tag v{version}"))?;
             }
+
+            shell("git push --tags")?;
         }
     }
     Ok(())

@@ -1,0 +1,6 @@
+[package]
+name = "mylib"
+version = "0.1.2"
+
+[dependencies]
+mylib-derive = { path = "../mylib-derive", version = "=0.1.2" }

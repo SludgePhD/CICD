@@ -147,9 +147,37 @@ fn single_package() {
             ::group::PUBLISH
             existing git tags: []
             publishable packages in workspace: [single-package@2.2.2]
-            publishing single-package 2.2.2 (with git tag v2.2.2)
-            > git tag v2.2.2
+            1 package needs publishing: [single-package@2.2.2]
+            publishing single-package@2.2.2
             > cargo publish --no-verify -p single-package --token dummy-token
+            > git tag v2.2.2
+            > git push --tags
+            PUBLISH: 0.00ns
+            ::endgroup::
+        "#]],
+    );
+    check_output(
+        Params::test("single-package").with_tags(&["v2.2.1"]),
+        expect![[r#"
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+            ::group::PUBLISH
+            existing git tags: ["v2.2.1"]
+            publishable packages in workspace: [single-package@2.2.2]
+            1 package needs publishing: [single-package@2.2.2]
+            publishing single-package@2.2.2
+            > cargo publish --no-verify -p single-package --token dummy-token
+            > git tag v2.2.2
             > git push --tags
             PUBLISH: 0.00ns
             ::endgroup::
@@ -177,6 +205,30 @@ fn single_package_existing_tag() {
             ::group::PUBLISH
             existing git tags: ["v2.2.2"]
             publishable packages in workspace: [single-package@2.2.2]
+            0 package need publishing: []
+            PUBLISH: 0.00ns
+            ::endgroup::
+        "#]],
+    );
+    check_output(
+        Params::test("single-package").with_tags(&["single-package-v2.2.2"]),
+        expect![[r#"
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+            ::group::PUBLISH
+            existing git tags: ["single-package-v2.2.2"]
+            publishable packages in workspace: [single-package@2.2.2]
+            0 package need publishing: []
             PUBLISH: 0.00ns
             ::endgroup::
         "#]],
@@ -213,13 +265,106 @@ fn workspace_inheritance() {
             ::group::PUBLISH
             existing git tags: []
             publishable packages in workspace: [version-normal@4.5.6, version-workspace@555.222.333]
-            publishing version-normal 4.5.6 (with git tag version-normal-v4.5.6)
-            > git tag version-normal-v4.5.6
+            2 package need publishing: [version-normal@4.5.6, version-workspace@555.222.333]
+            publishing version-normal@4.5.6
             > cargo publish --no-verify -p version-normal --token dummy-token
-            > git push --tags
-            publishing version-workspace 555.222.333 (with git tag version-workspace-v555.222.333)
-            > git tag version-workspace-v555.222.333
+            publishing version-workspace@555.222.333
             > cargo publish --no-verify -p version-workspace --token dummy-token
+            > git tag version-normal-v4.5.6
+            > git tag version-workspace-v555.222.333
+            > git push --tags
+            PUBLISH: 0.00ns
+            ::endgroup::
+        "#]],
+    );
+}
+
+#[test]
+fn synced_derive() {
+    check_find_packages(
+        "synced-derive",
+        expect![[r#"
+            [
+                mylib@0.1.2,
+                mylib-derive@0.1.2,
+            ]
+        "#]],
+    );
+
+    check_output(
+        Params::test("synced-derive"),
+        expect![[r#"
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+            ::group::PUBLISH
+            existing git tags: []
+            publishable packages in workspace: [mylib@0.1.2, mylib-derive@0.1.2]
+            2 package need publishing: [mylib@0.1.2, mylib-derive@0.1.2]
+            publishing mylib@0.1.2
+            > cargo publish --no-verify -p mylib --token dummy-token
+            publishing mylib-derive@0.1.2
+            > cargo publish --no-verify -p mylib-derive --token dummy-token
+            > git tag v0.1.2
+            > git push --tags
+            PUBLISH: 0.00ns
+            ::endgroup::
+        "#]],
+    );
+    check_output(
+        Params::test("synced-derive").with_tags(&["v0.1.2"]),
+        expect![[r#"
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+            ::group::PUBLISH
+            existing git tags: ["v0.1.2"]
+            publishable packages in workspace: [mylib@0.1.2, mylib-derive@0.1.2]
+            0 package need publishing: []
+            PUBLISH: 0.00ns
+            ::endgroup::
+        "#]],
+    );
+    check_output(
+        Params::test("synced-derive").with_tags(&["mylib-v0.1.2"]),
+        expect![[r#"
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+            ::group::PUBLISH
+            existing git tags: ["mylib-v0.1.2"]
+            publishable packages in workspace: [mylib@0.1.2, mylib-derive@0.1.2]
+            1 package needs publishing: [mylib-derive@0.1.2]
+            publishing mylib-derive@0.1.2
+            > cargo publish --no-verify -p mylib-derive --token dummy-token
+            > git tag mylib-derive-v0.1.2
             > git push --tags
             PUBLISH: 0.00ns
             ::endgroup::
