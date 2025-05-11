@@ -76,6 +76,12 @@ impl Params {
     }
 
     fn run_cicd_pipeline(mut self) -> Result<()> {
+        self.step_test()?;
+        self.step_publish()?;
+        Ok(())
+    }
+
+    fn step_test(&mut self) -> Result<()> {
         let args = self.args.join(" ");
         let cargo_toml = self.cwd.join("Cargo.toml");
         assert!(
@@ -102,75 +108,81 @@ impl Params {
             shell(&format!("cargo test --workspace {args}"))?;
         }
 
+        Ok(())
+    }
+
+    fn step_publish(&mut self) -> Result<()> {
         let current_branch = self.shell_output("git branch --show-current")?;
-        if &current_branch == "main" {
-            let _s = Section::new("PUBLISH");
-
-            let Some(token) = self.crates_io_token.clone() else {
-                eprintln!("no `CRATES_IO_TOKEN` set, skipping autopublish step");
-                return Ok(());
-            };
-
-            let tags_string = self.shell_output("git tag --list")?;
-            let tags = tags_string.split_whitespace().collect::<Vec<_>>();
-            println!("existing git tags: {tags:?}");
-
-            let packages = find_packages(self.cwd)?;
-            assert!(!packages.is_empty());
-            println!("publishable packages in workspace: {:?}", packages);
-
-            let same_version = packages
-                .iter()
-                .all(|pkg| pkg.version == packages[0].version);
-            let separate_tags =
-                !same_version || tags.iter().any(|tag| tag.ends_with(&packages[0].version));
-
-            let to_publish = packages
-                .iter()
-                .filter(|Package { name, version }| {
-                    !tags.contains(&&*format!("v{version}"))
-                        && !tags.contains(&&*format!("{name}-v{version}"))
-                })
-                .collect::<Vec<_>>();
-
-            eprintln!(
-                "{} package{} need{} publishing: {:?}",
-                to_publish.len(),
-                if to_publish.len() > 2 { "s" } else { "" },
-                if to_publish.len() == 1 { "s" } else { "" },
-                to_publish
-            );
-
-            for Package { name, version } in &to_publish {
-                // If there is neither a `$package-v$version` tag, nor a `v$version` tag, the package
-                // should be published.
-                // If all publishable packages are at the same version, and no tag that ends in that
-                // version exists, we'll use a single collective `v$version` tag for all packages.
-
-                // NB: we use `--no-verify` because we might build the workspace crates out of
-                // order, so a dependency might not be on crates.io when its dependents are
-                // verified. This isn't easily fixable without pulling in dependencies and getting
-                // the package graph somehow.
-                eprintln!("publishing {name}@{version}");
-                shell(&format!(
-                    "cargo publish --no-verify -p {name} --token {token}"
-                ))?;
-            }
-
-            if !to_publish.is_empty() {
-                if separate_tags {
-                    for Package { name, version } in &to_publish {
-                        let tag = format!("{name}-v{version}");
-                        shell(&format!("git tag {tag}"))?;
-                    }
-                } else {
-                    let version = &to_publish[0].version;
-                    shell(&format!("git tag v{version}"))?;
-                }
-
-                shell("git push --tags")?;
-            }
+        if &current_branch != "main" {
+            return Ok(());
         }
+        let _s = Section::new("PUBLISH");
+
+        let Some(token) = self.crates_io_token.clone() else {
+            eprintln!("no `CRATES_IO_TOKEN` set, skipping autopublish step");
+            return Ok(());
+        };
+
+        let tags_string = self.shell_output("git tag --list")?;
+        let tags = tags_string.split_whitespace().collect::<Vec<_>>();
+        println!("existing git tags: {tags:?}");
+
+        let packages = find_packages(self.cwd.clone())?;
+        assert!(!packages.is_empty());
+        println!("publishable packages in workspace: {:?}", packages);
+
+        let same_version = packages
+            .iter()
+            .all(|pkg| pkg.version == packages[0].version);
+        let separate_tags =
+            !same_version || tags.iter().any(|tag| tag.ends_with(&packages[0].version));
+
+        let to_publish = packages
+            .iter()
+            .filter(|Package { name, version }| {
+                !tags.contains(&&*format!("v{version}"))
+                    && !tags.contains(&&*format!("{name}-v{version}"))
+            })
+            .collect::<Vec<_>>();
+
+        eprintln!(
+            "{} package{} need{} publishing: {:?}",
+            to_publish.len(),
+            if to_publish.len() > 2 { "s" } else { "" },
+            if to_publish.len() == 1 { "s" } else { "" },
+            to_publish
+        );
+
+        for Package { name, version } in &to_publish {
+            // If there is neither a `$package-v$version` tag, nor a `v$version` tag, the package
+            // should be published.
+            // If all publishable packages are at the same version, and no tag that ends in that
+            // version exists, we'll use a single collective `v$version` tag for all packages.
+
+            // NB: we use `--no-verify` because we might build the workspace crates out of
+            // order, so a dependency might not be on crates.io when its dependents are
+            // verified. This isn't easily fixable without pulling in dependencies and getting
+            // the package graph somehow.
+            eprintln!("publishing {name}@{version}");
+            shell(&format!(
+                "cargo publish --no-verify -p {name} --token {token}"
+            ))?;
+        }
+
+        if !to_publish.is_empty() {
+            if separate_tags {
+                for Package { name, version } in &to_publish {
+                    let tag = format!("{name}-v{version}");
+                    shell(&format!("git tag {tag}"))?;
+                }
+            } else {
+                let version = &to_publish[0].version;
+                shell(&format!("git tag v{version}"))?;
+            }
+
+            shell("git push --tags")?;
+        }
+
         Ok(())
     }
 }
@@ -322,6 +334,11 @@ fn setup_environment(program: &str, cmd: &mut Command) {
                 .env("RUSTFLAGS", rustflags)
                 .env("RUSTDOCFLAGS", rustdocflags)
                 .env("RUST_BACKTRACE", rust_backtrace);
+        }
+        "gh" => {
+            if let Some(token) = env::var_os("GITHUB_TOKEN") {
+                cmd.env("GH_TOKEN", token);
+            }
         }
         _ => (),
     }
