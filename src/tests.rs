@@ -95,7 +95,7 @@ impl Params {
 fn check_output(params: Params, expect: Expect) {
     OUTPUT.replace(String::new());
 
-    crate::run_cicd(params).unwrap();
+    params.run_cicd_pipeline().unwrap();
 
     let output = OUTPUT.take();
     expect.assert_eq(&output);
