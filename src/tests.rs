@@ -108,10 +108,7 @@ fn single_package() {
         "single-package",
         expect![[r#"
             [
-                Package {
-                    name: "single-package",
-                    version: "2.2.2",
-                },
+                single-package@2.2.2,
             ]
         "#]],
     );
@@ -131,10 +128,9 @@ fn single_package() {
             > cargo test --workspace
             TEST: 0.00ns
             ::endgroup::
-            > git branch --show-current
             ::group::PUBLISH
-            > git tag --list
-            publishable packages in workspace: [Package { name: "single-package", version: "2.2.2" }]
+            existing git tags: []
+            publishable packages in workspace: [single-package@2.2.2]
             publishing single-package 2.2.2 (with git tag v2.2.2)
             > git tag v2.2.2
             > cargo publish --no-verify -p single-package --token dummy-token
@@ -151,14 +147,8 @@ fn workspace_inheritance() {
         "workspace-inheritance",
         expect![[r#"
             [
-                Package {
-                    name: "version-normal",
-                    version: "4.5.6",
-                },
-                Package {
-                    name: "version-workspace",
-                    version: "555.222.333",
-                },
+                version-normal@4.5.6,
+                version-workspace@555.222.333,
             ]
         "#]],
     );
@@ -178,10 +168,9 @@ fn workspace_inheritance() {
             > cargo test --workspace
             TEST: 0.00ns
             ::endgroup::
-            > git branch --show-current
             ::group::PUBLISH
-            > git tag --list
-            publishable packages in workspace: [Package { name: "version-normal", version: "4.5.6" }, Package { name: "version-workspace", version: "555.222.333" }]
+            existing git tags: []
+            publishable packages in workspace: [version-normal@4.5.6, version-workspace@555.222.333]
             publishing version-normal 4.5.6 (with git tag version-normal-v4.5.6)
             > git tag version-normal-v4.5.6
             > cargo publish --no-verify -p version-normal --token dummy-token

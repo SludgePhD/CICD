@@ -3,7 +3,7 @@
 mod tests;
 
 use std::{
-    env, fs,
+    env, fmt, fs,
     path::PathBuf,
     process::{self, Command, ExitStatus, Stdio},
     time::{Duration, Instant},
@@ -52,8 +52,6 @@ struct Params {
 
 impl Params {
     fn shell_output(&mut self, cmd: &str) -> Result<String> {
-        eprintln!("> {}", cmd);
-
         match &mut self.mock_output {
             Some(output) => {
                 if output.is_empty() {
@@ -68,7 +66,6 @@ impl Params {
                 check_status(output.status)?;
                 let res = String::from_utf8(output.stdout)?;
                 let res = res.trim().to_string();
-                println!("{}", res);
                 Ok(res)
             }
         }
@@ -104,27 +101,30 @@ fn run_cicd(mut params: Params) -> Result<()> {
 
     let current_branch = params.shell_output("git branch --show-current")?;
     if &current_branch == "main" {
+        let _s = Section::new("PUBLISH");
+
         let Some(token) = params.crates_io_token.clone() else {
-            println!("no `CRATES_IO_TOKEN` set, skipping autopublish step");
+            eprintln!("no `CRATES_IO_TOKEN` set, skipping autopublish step");
             return Ok(());
         };
 
-        let _s = Section::new("PUBLISH");
-        let tags = params.shell_output("git tag --list")?;
+        let tags_string = params.shell_output("git tag --list")?;
+        let tags = tags_string.split_whitespace().collect::<Vec<_>>();
+        println!("existing git tags: {tags:?}");
 
         let packages = find_packages(params.cwd)?;
         assert!(!packages.is_empty());
-        eprintln!("publishable packages in workspace: {:?}", packages);
+        println!("publishable packages in workspace: {:?}", packages);
 
         // Did any previous release include multiple packages?
-        let was_multi_package = packages.iter().any(|pkg| tags.contains(&pkg.name));
+        let was_multi_package = packages.iter().any(|pkg| tags_string.contains(&pkg.name));
         let is_multi_package = packages.len() != 1;
 
         let needs_publish = |pkgname: &str, version: &str| {
             if was_multi_package {
-                !tags.contains(&format!("{pkgname}-v{version}"))
+                !tags.contains(&&*format!("{pkgname}-v{version}"))
             } else {
-                !tags.contains(&format!("v{version}"))
+                !tags.contains(&&*format!("v{version}"))
             }
         };
 
@@ -138,7 +138,7 @@ fn run_cicd(mut params: Params) -> Result<()> {
             if needs_publish(&name, &version) {
                 // NB: we use `--no-verify` because we might build the workspace crates out of
                 // order, so a dependency might not be on crates.io when its dependents are
-                // verified. This isn't easily fixable without pulling it dependencies and getting
+                // verified. This isn't easily fixable without pulling in dependencies and getting
                 // the package graph somehow.
                 let tag = format!("{prefix}v{version}");
                 eprintln!("publishing {name} {version} (with git tag {tag})");
@@ -153,10 +153,20 @@ fn run_cicd(mut params: Params) -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug)]
 struct Package {
     name: String,
     version: String,
+}
+
+impl fmt::Display for Package {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}@{}", self.name, self.version)
+    }
+}
+impl fmt::Debug for Package {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}@{}", self.name, self.version)
+    }
 }
 
 fn find_packages(cwd: PathBuf) -> Result<Vec<Package>> {
