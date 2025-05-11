@@ -6,13 +6,7 @@ on:
     - main
 
 env:
-  CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
-  CARGO_INCREMENTAL: 0
-  CI: 1
-  RUST_BACKTRACE: short
-  RUSTFLAGS: -D warnings
-  RUSTDOCFLAGS: -D warnings
 
 jobs:
   ci:

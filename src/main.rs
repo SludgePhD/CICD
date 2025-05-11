@@ -275,8 +275,12 @@ fn workspace_version(cwd: PathBuf) -> Result<String> {
 
 fn shell(cmd: &str) -> Result<()> {
     eprintln!("> {}", cmd.trim());
+    assert!(
+        !cmd.contains('"'),
+        "quoting and escaping command-line arguments is not supported"
+    );
     if cfg!(test) {
-        return Ok(());
+        Ok(())
     } else {
         let status = command(cmd).status()?;
         check_status(status)
@@ -288,10 +292,38 @@ fn command(cmd: &str) -> Command {
         .split_ascii_whitespace()
         .filter(|arg| !arg.trim().is_empty())
         .collect::<Vec<_>>();
-    let (cmd, args) = words.split_first().unwrap();
-    let mut res = Command::new(cmd);
-    res.env("CI", "1").env_remove("CRATES_IO_TOKEN").args(args);
-    res
+    let (program, args) = words.split_first().unwrap();
+    let mut command = Command::new(program);
+    command.args(args);
+    setup_environment(program, &mut command);
+    command
+}
+
+fn setup_environment(program: &str, cmd: &mut Command) {
+    // Remove the crates.io token so that tests and build scripts can't read it. It is explicitly
+    // passed to Cargo via `--token` when needed.
+    cmd.env_remove("CRATES_IO_TOKEN");
+
+    // Only `git` needs the `GITHUB_TOKEN` for pushing tags (which needs to be configured with
+    // `contents: write` permission).
+    if program != "git" {
+        cmd.env_remove("GITHUB_TOKEN");
+    }
+
+    match program {
+        "cargo" => {
+            let rustflags = env::var_os("RUSTFLAGS").unwrap_or("-D warnings".into());
+            let rustdocflags = env::var_os("RUSTDOCFLAGS").unwrap_or("-D warnings".into());
+            let rust_backtrace = env::var_os("RUST_BACKTRACE").unwrap_or("short".into());
+            cmd.env("CI", "1")
+                .env("CARGO_NET_RETRY", "10") // CI environment networking may be unreliable
+                .env("CARGO_INCREMENTAL", "0") // Incremental builds are slower and not needed here
+                .env("RUSTFLAGS", rustflags)
+                .env("RUSTDOCFLAGS", rustdocflags)
+                .env("RUST_BACKTRACE", rust_backtrace);
+        }
+        _ => (),
+    }
 }
 
 fn check_status(status: ExitStatus) -> Result<()> {
