@@ -1,6 +1,7 @@
 #[cfg(test)]
 #[macro_use]
 mod tests;
+mod toml;
 
 use std::{
     env, fmt, fs,
@@ -8,6 +9,8 @@ use std::{
     process::{self, Command, ExitStatus, Stdio},
     time::{Duration, Instant},
 };
+
+use toml::{Toml, Value};
 
 type Error = Box<dyn std::error::Error>;
 type Result<T> = std::result::Result<T, Error>;
@@ -179,18 +182,20 @@ fn find_packages(cwd: PathBuf) -> Result<Vec<Package>> {
         toml.push("Cargo.toml");
         if toml.exists() {
             let manifest = fs::read_to_string(&toml)?;
+            let toml = Toml(&manifest);
             // Filter out virtual manifests, those with `publish = false` set, and those that lack a
             // `version` field.
             if manifest.contains("[package]")
-                && !matches!(get_field(&manifest, "publish"), Ok(Value::Bool(false)))
-                && (get_field(&manifest, "version").is_ok()
-                    || get_field(&manifest, "version.workspace").is_ok())
+                && !matches!(toml.get_field("publish"), Ok(Value::Bool(false)))
+                && (toml.get_field("version").is_ok()
+                    || toml.get_field("version.workspace").is_ok())
             {
-                let name = get_field(&manifest, "name")?
+                let name = toml
+                    .get_field("name")?
                     .as_str()
                     .ok_or("package name is not a string")?
                     .to_string();
-                let version = match get_field(&manifest, "version") {
+                let version = match toml.get_field("version") {
                     Ok(version) => version
                         .as_str()
                         .ok_or("version is not a string")?
@@ -240,52 +245,14 @@ fn workspace_version(cwd: PathBuf) -> Result<String> {
     path.push("Cargo.toml");
     let manifest = fs::read_to_string(path)?;
     if manifest.contains("[workspace]") {
-        let version = get_field(&manifest, "package.version")?
+        let version = Toml(&manifest)
+            .get_field("package.version")?
             .as_str()
             .ok_or("version is not a string")?;
         Ok(version.to_string())
     } else {
         Err("no workspace".into())
     }
-}
-
-enum Value<'a> {
-    Str(&'a str),
-    Bool(bool),
-}
-
-impl<'a> Value<'a> {
-    fn as_str(&self) -> Option<&'a str> {
-        if let Self::Str(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-}
-
-fn get_field<'a>(text: &'a str, name: &str) -> Result<Value<'a>> {
-    for line in text.lines() {
-        let words = line.split_ascii_whitespace().collect::<Vec<_>>();
-        match words.as_slice() {
-            [n, "=", v, ..] if n.trim() == name => {
-                let v = v.trim();
-                if v.starts_with('"') {
-                    assert!(
-                        v.ends_with('"'),
-                        "unclosed string, or trailing comment in '{line}'"
-                    );
-                    return Ok(Value::Str(&v[1..v.len() - 1]));
-                } else if v.split(|v: char| !v.is_alphanumeric()).next().unwrap() == "true" {
-                    return Ok(Value::Bool(true));
-                } else if v.split(|v: char| !v.is_alphanumeric()).next().unwrap() == "false" {
-                    return Ok(Value::Bool(false));
-                }
-            }
-            _ => (),
-        }
-    }
-    Err(format!("can't find `{}` in\n----\n{}\n----\n", name, text))?
 }
 
 fn shell(cmd: &str) -> Result<()> {
