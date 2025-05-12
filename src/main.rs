@@ -119,7 +119,7 @@ impl Params {
         let _s = Section::new("PUBLISH");
 
         let Some(token) = self.crates_io_token.clone() else {
-            eprintln!("no `CRATES_IO_TOKEN` set, skipping autopublish step");
+            println!("no `CRATES_IO_TOKEN` set, skipping autopublish step");
             return Ok(());
         };
 
@@ -145,10 +145,10 @@ impl Params {
             })
             .collect::<Vec<_>>();
 
-        eprintln!(
+        println!(
             "{} package{} need{} publishing: {:?}",
             to_publish.len(),
-            if to_publish.len() >= 2 { "s" } else { "" },
+            if to_publish.len() != 1 { "s" } else { "" },
             if to_publish.len() == 1 { "s" } else { "" },
             to_publish
         );
@@ -163,7 +163,7 @@ impl Params {
             // order, so a dependency might not be on crates.io when its dependents are
             // verified. This isn't easily fixable without pulling in dependencies and getting
             // the package graph somehow.
-            eprintln!("publishing {name}@{version}");
+            println!("publishing {name}@{version}");
             shell(&format!(
                 "cargo publish --no-verify -p {name} --token {token}"
             ))?;
@@ -187,6 +187,7 @@ impl Params {
     }
 }
 
+#[derive(Clone)]
 struct Package {
     name: String,
     version: String,
@@ -206,7 +207,7 @@ impl fmt::Debug for Package {
 fn find_packages(cwd: PathBuf) -> Result<Vec<Package>> {
     fn recurse(
         dir: PathBuf,
-        out: &mut Vec<Package>,
+        out: &mut Vec<(Package, String)>,
         workspace_version: Option<&str>,
     ) -> Result<()> {
         let mut toml = dir.clone();
@@ -237,7 +238,7 @@ fn find_packages(cwd: PathBuf) -> Result<Vec<Package>> {
                     },
                 };
 
-                out.push(Package { name, version });
+                out.push((Package { name, version }, manifest));
             }
         }
 
@@ -265,10 +266,74 @@ fn find_packages(cwd: PathBuf) -> Result<Vec<Package>> {
     let mut out = Vec::new();
     recurse(cwd, &mut out, workspace_version.as_deref())?;
 
-    // This list depends on iteration order, so sort it for portability in the tests.
-    out.sort_by_key(|pkg| pkg.name.clone());
+    let pkgs = sort_packages(&mut out);
 
-    Ok(out)
+    Ok(pkgs)
+}
+
+/// A package can only be published (even with `--no-verify`) if its dependencies are already
+/// available on crates.io.
+///
+/// Cargo will wait until crates.io makes the package available, but we have to publish them in the
+/// right order. That means topologically sorting an approximation of the dependency graph.
+fn sort_packages(pkgs: &mut [(Package, String)]) -> Vec<Package> {
+    // Start with a deterministic ordering.
+    pkgs.sort_by_key(|(pkg, _)| pkg.name.clone());
+
+    let mut depends_on = vec![vec![]; pkgs.len()];
+    let mut dependants = vec![0; pkgs.len()];
+    for (i, (pkg, manifest)) in pkgs.iter().enumerate() {
+        let toml = Toml(&manifest);
+        for (name, contents) in toml.sections() {
+            if !name.ends_with("dependencies") {
+                continue;
+            }
+
+            for line in contents.0.lines() {
+                let Some((dep, _)) = line.split_once('=') else {
+                    continue;
+                };
+                let dep = dep.trim();
+                if let Some((pos, (dep, _))) = pkgs
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (pkg, _))| pkg.name == dep)
+                {
+                    if !depends_on[i].contains(&pos) {
+                        println!("{pkg} depends on {dep}");
+                        depends_on[i].push(pos);
+                        dependants[pos] += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut eligible_nodes = dependants
+        .iter()
+        .enumerate()
+        .filter_map(|(i, dependants)| if *dependants == 0 { Some(i) } else { None })
+        .collect::<Vec<_>>();
+    assert!(!eligible_nodes.is_empty(), "dependency cycle detected");
+
+    let mut list = Vec::new();
+    while let Some(i) = eligible_nodes.pop() {
+        list.push(pkgs[i].0.clone());
+        for &dep in &depends_on[i] {
+            dependants[dep] -= 1;
+            if dependants[dep] == 0 {
+                eligible_nodes.push(dep);
+            }
+        }
+    }
+
+    // A -> B will place A in front of B in the ordering, but we need the opposite.
+    list.reverse();
+
+    assert!(dependants.iter().all(|i| *i == 0));
+    assert_eq!(list.len(), pkgs.len());
+
+    list
 }
 
 fn workspace_version(cwd: PathBuf) -> Result<String> {
@@ -287,7 +352,7 @@ fn workspace_version(cwd: PathBuf) -> Result<String> {
 }
 
 fn shell(cmd: &str) -> Result<()> {
-    eprintln!("> {}", cmd.trim());
+    println!("> {}", cmd.trim());
     assert!(
         !cmd.contains('"'),
         "quoting and escaping command-line arguments is not supported"
@@ -312,6 +377,7 @@ fn command(cmd: &str) -> Command {
     command
 }
 
+/// Prepares environment variables for invocation of `program`.
 fn setup_environment(program: &str, cmd: &mut Command) {
     // Remove the crates.io token so that tests and build scripts can't read it. It is explicitly
     // passed to Cargo via `--token` when needed.

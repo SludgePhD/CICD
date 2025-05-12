@@ -205,7 +205,7 @@ fn single_package_existing_tag() {
             ::group::PUBLISH
             existing git tags: ["v2.2.2"]
             publishable packages in workspace: [single-package@2.2.2]
-            0 package need publishing: []
+            0 packages need publishing: []
             PUBLISH: 0.00ns
             ::endgroup::
         "#]],
@@ -228,7 +228,7 @@ fn single_package_existing_tag() {
             ::group::PUBLISH
             existing git tags: ["single-package-v2.2.2"]
             publishable packages in workspace: [single-package@2.2.2]
-            0 package need publishing: []
+            0 packages need publishing: []
             PUBLISH: 0.00ns
             ::endgroup::
         "#]],
@@ -285,8 +285,8 @@ fn synced_derive() {
         "synced-derive",
         expect![[r#"
             [
-                mylib@0.1.2,
                 mylib-derive@0.1.2,
+                mylib@0.1.2,
             ]
         "#]],
     );
@@ -308,12 +308,13 @@ fn synced_derive() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            publishable packages in workspace: [mylib@0.1.2, mylib-derive@0.1.2]
-            2 packages need publishing: [mylib@0.1.2, mylib-derive@0.1.2]
-            publishing mylib@0.1.2
-            > cargo publish --no-verify -p mylib --token dummy-token
+            mylib@0.1.2 depends on mylib-derive@0.1.2
+            publishable packages in workspace: [mylib-derive@0.1.2, mylib@0.1.2]
+            2 packages need publishing: [mylib-derive@0.1.2, mylib@0.1.2]
             publishing mylib-derive@0.1.2
             > cargo publish --no-verify -p mylib-derive --token dummy-token
+            publishing mylib@0.1.2
+            > cargo publish --no-verify -p mylib --token dummy-token
             > git tag v0.1.2
             > git push --tags
             PUBLISH: 0.00ns
@@ -337,8 +338,9 @@ fn synced_derive() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: ["v0.1.2"]
-            publishable packages in workspace: [mylib@0.1.2, mylib-derive@0.1.2]
-            0 package need publishing: []
+            mylib@0.1.2 depends on mylib-derive@0.1.2
+            publishable packages in workspace: [mylib-derive@0.1.2, mylib@0.1.2]
+            0 packages need publishing: []
             PUBLISH: 0.00ns
             ::endgroup::
         "#]],
@@ -360,11 +362,52 @@ fn synced_derive() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: ["mylib-v0.1.2"]
-            publishable packages in workspace: [mylib@0.1.2, mylib-derive@0.1.2]
+            mylib@0.1.2 depends on mylib-derive@0.1.2
+            publishable packages in workspace: [mylib-derive@0.1.2, mylib@0.1.2]
             1 package needs publishing: [mylib-derive@0.1.2]
             publishing mylib-derive@0.1.2
             > cargo publish --no-verify -p mylib-derive --token dummy-token
             > git tag mylib-derive-v0.1.2
+            > git push --tags
+            PUBLISH: 0.00ns
+            ::endgroup::
+        "#]],
+    );
+}
+
+#[test]
+fn dep_graph() {
+    check_output(
+        Params::test("graph"),
+        expect![[r#"
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+            ::group::PUBLISH
+            existing git tags: []
+            b@0.1.0 depends on a@0.1.0
+            b@0.1.0 depends on d@0.1.0
+            c@0.1.0 depends on a@0.1.0
+            publishable packages in workspace: [a@0.1.0, d@0.1.0, b@0.1.0, c@0.1.0]
+            4 packages need publishing: [a@0.1.0, d@0.1.0, b@0.1.0, c@0.1.0]
+            publishing a@0.1.0
+            > cargo publish --no-verify -p a --token dummy-token
+            publishing d@0.1.0
+            > cargo publish --no-verify -p d --token dummy-token
+            publishing b@0.1.0
+            > cargo publish --no-verify -p b --token dummy-token
+            publishing c@0.1.0
+            > cargo publish --no-verify -p c --token dummy-token
+            > git tag v0.1.0
             > git push --tags
             PUBLISH: 0.00ns
             ::endgroup::
