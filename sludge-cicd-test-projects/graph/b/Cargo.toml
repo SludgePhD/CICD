@@ -3,5 +3,5 @@ name = "b"
 version = "0.1.0"
 
 [dependencies]
-a = { path = "../a", version = "0.1.0" }
+a.workspace = true
 d = { path = "../d", version = "0.1.0" }

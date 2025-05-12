@@ -1,1 +1,2 @@
 [workspace]
+dependencies.a = { path = "a", version = "0.1.0" }

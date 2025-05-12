@@ -290,10 +290,15 @@ fn sort_packages(pkgs: &mut [(Package, String)]) -> Vec<Package> {
             }
 
             for line in contents.0.lines() {
+                // Dependency specifications like:
+                // dep = { version = ... }
+                // dep = "1.2.3"
+                // dep.workspace = true
+                // dep.version = "1.2.3"
                 let Some((dep, _)) = line.split_once('=') else {
                     continue;
                 };
-                let dep = dep.trim();
+                let dep = dep.split('.').next().unwrap().trim();
                 if let Some((pos, (dep, _))) = pkgs
                     .iter()
                     .enumerate()

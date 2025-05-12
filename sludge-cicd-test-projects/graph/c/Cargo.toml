@@ -3,4 +3,5 @@ name = "c"
 version = "0.1.0"
 
 [dependencies]
-a = { path = "../a", version = "0.1.0" }
+a.path = "../a"
+a.version = "0.1.0"
