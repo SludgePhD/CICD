@@ -1,19 +1,31 @@
 #[cfg(test)]
 #[macro_use]
 mod tests;
+mod markdown;
 mod toml;
+mod utils;
 
 use std::{
-    env, fmt, fs,
+    env,
+    fmt::{self, Write as _},
+    fs,
+    io::{self, Write as _},
     path::PathBuf,
     process::{self, Command, ExitStatus, Stdio},
     time::{Duration, Instant},
 };
 
+use markdown::Markdown;
 use toml::{Toml, Value};
 
 type Error = Box<dyn std::error::Error>;
 type Result<T> = std::result::Result<T, Error>;
+
+macro_rules! bail {
+    ($($args:tt)+) => {
+        return Err(format!($($args)+).into())
+    };
+}
 
 fn main() {
     if let Err(err) = try_main() {
@@ -33,11 +45,13 @@ fn try_main() -> Result<()> {
     };
     let check_only = env::var_os("CICD_CHECK_ONLY").is_some();
     let skip_docs = env::var_os("CICD_SKIP_DOCS").is_some();
+    let commit = env::var("GITHUB_SHA")?;
 
     Params {
         cwd,
         args,
         crates_io_token,
+        commit,
         check_only,
         skip_docs,
         mock_output: None,
@@ -49,6 +63,7 @@ struct Params {
     cwd: PathBuf,
     args: Vec<String>,
     crates_io_token: Option<String>,
+    commit: String,
     check_only: bool,
     skip_docs: bool,
     mock_output: Option<Vec<(&'static str, String)>>,
@@ -77,6 +92,7 @@ impl Params {
 
     fn run_cicd_pipeline(mut self) -> Result<()> {
         self.step_test()?;
+        self.step_gitcheck()?;
         self.step_publish()?;
         Ok(())
     }
@@ -111,6 +127,31 @@ impl Params {
         Ok(())
     }
 
+    /// Checks that the repository is clean.
+    ///
+    /// There must be no untracked files created by running the test suite, no commits created, and
+    /// no files staged.
+    fn step_gitcheck(&mut self) -> Result<()> {
+        // Deny untracked and changed files, and staged changes.
+        let files = self.shell_output("git status --porcelain")?;
+        if !files.trim().is_empty() {
+            return Err(format!("untracked/modified files present: {files}").into());
+        }
+
+        // Ensure that HEAD is still at the expected git commit.
+        let commit = self.shell_output("git rev-parse HEAD")?;
+        let commit = commit.trim();
+        if self.commit != commit {
+            return Err(format!(
+                "repo is at unexpected commit {commit} (expected {})",
+                self.commit
+            )
+            .into());
+        }
+
+        Ok(())
+    }
+
     fn step_publish(&mut self) -> Result<()> {
         let current_branch = self.shell_output("git branch --show-current")?;
         if &current_branch != "main" {
@@ -127,23 +168,33 @@ impl Params {
         let tags = tags_string.split_whitespace().collect::<Vec<_>>();
         println!("existing git tags: {tags:?}");
 
-        let packages = find_packages(self.cwd.clone())?;
-        assert!(!packages.is_empty());
+        let workspace = Workspace::get(self.cwd.clone())?;
+        let packages = workspace.find_packages()?;
+        if packages.is_empty() {
+            bail!("no publishable packages found in '{}'", self.cwd.display());
+        }
         println!("publishable packages in workspace: {:?}", packages);
 
         let same_version = packages
             .iter()
             .all(|pkg| pkg.version == packages[0].version);
-        let separate_tags =
-            !same_version || tags.iter().any(|tag| tag.ends_with(&packages[0].version));
+        let has_package_specific_changelog =
+            packages.iter().any(|pkg| pkg.changelog_path.is_some());
+        let separate_tags = has_package_specific_changelog
+            || !same_version
+            || tags.iter().any(|tag| tag.ends_with(&packages[0].version));
 
-        let to_publish = packages
-            .iter()
-            .filter(|Package { name, version }| {
+        let mut to_publish = packages
+            .into_iter()
+            .filter(|Package { name, version, .. }| {
                 !tags.contains(&&*format!("v{version}"))
                     && !tags.contains(&&*format!("{name}-v{version}"))
             })
             .collect::<Vec<_>>();
+        if to_publish.is_empty() {
+            println!("no packages need publishing, done");
+            return Ok(());
+        }
 
         println!(
             "{} package{} need{} publishing: {:?}",
@@ -153,7 +204,9 @@ impl Params {
             to_publish
         );
 
-        for Package { name, version } in &to_publish {
+        self.extract_release_notes(&mut to_publish, &workspace)?;
+
+        for Package { name, version, .. } in &to_publish {
             // If there is neither a `$package-v$version` tag, nor a `v$version` tag, the package
             // should be published.
             // If all publishable packages are at the same version, and no tag that ends in that
@@ -169,18 +222,131 @@ impl Params {
             ))?;
         }
 
-        if !to_publish.is_empty() {
-            if separate_tags {
-                for Package { name, version } in &to_publish {
-                    let tag = format!("{name}-v{version}");
-                    shell(&format!("git tag {tag}"))?;
+        if separate_tags {
+            for package in &to_publish {
+                let Package { name, version, .. } = package;
+
+                let tag = format!("{name}-v{version}");
+                shell(&format!("git tag {tag}"))?;
+            }
+        } else {
+            let version = &to_publish[0].version;
+            shell(&format!("git tag v{version}"))?;
+        }
+
+        shell("git push --tags")?;
+
+        if separate_tags {
+            for package in &to_publish {
+                let Package {
+                    name,
+                    version,
+                    release_notes,
+                    ..
+                } = package;
+
+                let tag = format!("{name}-v{version}");
+                if let Some(relnotes) = release_notes {
+                    shell_with_stdin(&format!("gh release create {tag} --notes-file -"), relnotes)?;
                 }
-            } else {
-                let version = &to_publish[0].version;
-                shell(&format!("git tag v{version}"))?;
+            }
+        } else if to_publish.iter().any(|pkg| pkg.release_notes.is_some()) {
+            // Shared tag -> Create merged release notes from all packages.
+            // If multiple packages have the same relnotes, deduplicate them (likely from the
+            // workspace-level CHANGELOG.md).
+            let mut entries = Vec::new();
+            let mut prev_notes = None;
+            for package in &to_publish {
+                if let Some(notes) = &package.release_notes {
+                    if Some(&**notes) == prev_notes {
+                        continue;
+                    }
+                    prev_notes = Some(&**notes);
+                    entries.push(package);
+                }
             }
 
-            shell("git push --tags")?;
+            let mut relnotes = String::new();
+            for package in &entries {
+                if let Some(notes) = &package.release_notes {
+                    if !relnotes.is_empty() {
+                        relnotes += "\n";
+                    }
+
+                    if entries.len() > 1 {
+                        writeln!(relnotes, "# {} {}", package.name, package.version).ok();
+                        writeln!(relnotes).ok();
+                    }
+                    writeln!(relnotes, "{notes}").ok();
+                }
+            }
+
+            let tag = format!("v{}", &to_publish[0].version);
+            shell_with_stdin(
+                &format!("gh release create {tag} --notes-file -"),
+                &relnotes,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn extract_release_notes(&self, packages: &mut [Package], workspace: &Workspace) -> Result<()> {
+        for package in packages {
+            let Some(changelog_path) = package
+                .changelog_path
+                .as_deref()
+                .or(workspace.changelog.as_deref())
+            else {
+                continue;
+            };
+
+            // There is a package-specific changelog. It has to contain a single heading for the
+            // version we're about to release.
+            let changelog = fs::read_to_string(changelog_path)?;
+
+            let mut entries_matching_version = Vec::new();
+            for level in 1..=3 {
+                for (title, contents) in Markdown(&changelog).sections(level) {
+                    if title.contains(&*package.version) {
+                        entries_matching_version.push((title, contents.0));
+                    }
+                }
+                if !entries_matching_version.is_empty() {
+                    break;
+                }
+            }
+
+            let entry = match *entries_matching_version {
+                [] => bail!(
+                    "changelog at '{}' does not contain an entry for {package}",
+                    changelog_path.display()
+                ),
+                [(_, contents)] => contents,
+                [ref multiple @ ..] => {
+                    let mut entry_containing_name = None;
+                    for (title, contents) in multiple {
+                        if title.to_ascii_lowercase().contains(&package.name) {
+                            if entry_containing_name.is_some() {
+                                bail!(
+                                    "changelog '{}' contains multiple entries for {package}",
+                                    changelog_path.display()
+                                );
+                            }
+                            entry_containing_name = Some(*contents);
+                        }
+                    }
+                    match entry_containing_name {
+                        Some(contents) => contents,
+                        None => bail!(
+                            "changelog '{}' is missing an entry for {package}",
+                            changelog_path.display()
+                        ),
+                    }
+                }
+            };
+
+            package.release_notes = Some(entry.to_string());
         }
 
         Ok(())
@@ -191,6 +357,11 @@ impl Params {
 struct Package {
     name: String,
     version: String,
+    /// If the package has its own changelog (separate from the top-level workspace changelog),
+    /// this is the changelog's path.
+    changelog_path: Option<PathBuf>,
+    /// Set to the changelog contents for this package version when we're about to publish it.
+    release_notes: Option<String>,
 }
 
 impl fmt::Display for Package {
@@ -204,71 +375,126 @@ impl fmt::Debug for Package {
     }
 }
 
-fn find_packages(cwd: PathBuf) -> Result<Vec<Package>> {
-    fn recurse(
-        dir: PathBuf,
-        out: &mut Vec<(Package, String)>,
-        workspace_version: Option<&str>,
-    ) -> Result<()> {
-        let mut toml = dir.clone();
-        toml.push("Cargo.toml");
-        if toml.exists() {
-            let manifest = fs::read_to_string(&toml)?;
-            let toml = Toml(&manifest);
-            // Filter out virtual manifests, those with `publish = false` set, and those that lack a
-            // `version` field.
-            if manifest.contains("[package]")
-                && !matches!(toml.get_field("publish"), Ok(Value::Bool(false)))
-                && (toml.get_field("version").is_ok()
-                    || toml.get_field("version.workspace").is_ok())
-            {
-                let name = toml
-                    .get_field("name")?
-                    .as_str()
-                    .ok_or("package name is not a string")?
-                    .to_string();
-                let version = match toml.get_field("version") {
-                    Ok(version) => version
+#[derive(Debug)]
+struct Workspace {
+    cwd: PathBuf,
+    version: Option<String>,
+    changelog: Option<PathBuf>,
+}
+
+impl Workspace {
+    fn get(cwd: PathBuf) -> Result<Self> {
+        let version = match fs::read_to_string(cwd.join("Cargo.toml")) {
+            Ok(manifest) => match Toml(&manifest).get_field("package.version") {
+                Ok(version) => Some(
+                    version
                         .as_str()
                         .ok_or("version is not a string")?
                         .to_string(),
-                    Err(e) => match workspace_version {
-                        Some(version) => version.to_string(),
-                        None => return Err(e),
-                    },
-                };
+                ),
+                Err(_) => None,
+            },
+            Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+            Err(e) => return Err(e.into()),
+        };
 
-                out.push((Package { name, version }, manifest));
-            }
-        }
+        let changelog = cwd.join("CHANGELOG.md");
+        let changelog = if changelog.exists() {
+            Some(changelog)
+        } else {
+            None
+        };
 
-        let is_test_dir = dir
-            .to_str()
-            .expect("non-UTF-8 path")
-            .ends_with("sludge-cicd-test-projects");
+        Ok(Self {
+            cwd,
+            version,
+            changelog,
+        })
+    }
 
-        if !is_test_dir {
-            for entry in fs::read_dir(&dir)? {
-                let entry = entry?;
-                if entry.file_type()?.is_dir() {
-                    recurse(entry.path(), out, workspace_version)?;
+    fn find_packages(&self) -> Result<Vec<Package>> {
+        fn recurse(
+            dir: PathBuf,
+            out: &mut Vec<(Package, String)>,
+            workspace: &Workspace,
+        ) -> Result<()> {
+            let mut toml = dir.clone();
+            toml.push("Cargo.toml");
+            if toml.exists() {
+                let manifest = fs::read_to_string(&toml)?;
+                let toml = Toml(&manifest);
+                // Filter out virtual manifests, those with `publish = false` set, and those that lack a
+                // `version` field.
+                if manifest.contains("[package]")
+                    && !matches!(toml.get_field("publish"), Ok(Value::Bool(false)))
+                    && (toml.get_field("version").is_ok()
+                        || toml.get_field("version.workspace").is_ok())
+                {
+                    let name = toml
+                        .get_field("name")?
+                        .as_str()
+                        .ok_or("package name is not a string")?
+                        .to_string();
+                    let version = match toml.get_field("version") {
+                        Ok(version) => version
+                            .as_str()
+                            .ok_or("version is not a string")?
+                            .to_string(),
+                        Err(e) => match &workspace.version {
+                            Some(version) => version.clone(),
+                            None => return Err(e),
+                        },
+                    };
+
+                    let mut changelog = dir.clone();
+                    changelog.push("CHANGELOG.md");
+                    let changelog = if changelog.exists()
+                        && Some(&*changelog) != workspace.changelog.as_deref()
+                    {
+                        Some(changelog)
+                    } else {
+                        None
+                    };
+
+                    out.push((
+                        Package {
+                            name,
+                            version,
+                            changelog_path: changelog,
+                            release_notes: None,
+                        },
+                        manifest,
+                    ));
                 }
             }
+
+            let is_test_dir = dir
+                .to_str()
+                .expect("non-UTF-8 path")
+                .ends_with("sludge-cicd-test-projects");
+
+            if !is_test_dir {
+                for entry in fs::read_dir(&dir)? {
+                    let entry = entry?;
+                    if entry.file_type()?.is_dir() {
+                        recurse(entry.path(), out, workspace)?;
+                    }
+                }
+            }
+            Ok(())
         }
-        Ok(())
+
+        if !self.cwd.join("Cargo.toml").exists() {
+            return Err("`Cargo.toml` does not exist in the project directory".into());
+        }
+
+        let mut out = Vec::new();
+        recurse(self.cwd.clone(), &mut out, self)?;
+
+        let pkgs = sort_packages(&mut out);
+
+        Ok(pkgs)
     }
-
-    if !cwd.join("Cargo.toml").exists() {
-        return Err("`Cargo.toml` does not exist in the project directory".into());
-    }
-
-    let workspace_version = workspace_version(cwd.clone()).ok();
-    let mut out = Vec::new();
-    recurse(cwd, &mut out, workspace_version.as_deref())?;
-
-    let pkgs = sort_packages(&mut out);
-
-    Ok(pkgs)
 }
 
 /// A package can only be published (even with `--no-verify`) if its dependencies are already
@@ -277,6 +503,10 @@ fn find_packages(cwd: PathBuf) -> Result<Vec<Package>> {
 /// Cargo will wait until crates.io makes the package available, but we have to publish them in the
 /// right order. That means topologically sorting an approximation of the dependency graph.
 fn sort_packages(pkgs: &mut [(Package, String)]) -> Vec<Package> {
+    if pkgs.is_empty() {
+        return Vec::new();
+    }
+
     // Start with a deterministic ordering.
     pkgs.sort_by_key(|(pkg, _)| pkg.name.clone());
 
@@ -341,31 +571,39 @@ fn sort_packages(pkgs: &mut [(Package, String)]) -> Vec<Package> {
     list
 }
 
-fn workspace_version(cwd: PathBuf) -> Result<String> {
-    let mut path = cwd;
-    path.push("Cargo.toml");
-    let manifest = fs::read_to_string(path)?;
-    if manifest.contains("[workspace]") {
-        let version = Toml(&manifest)
-            .get_field("package.version")?
-            .as_str()
-            .ok_or("version is not a string")?;
-        Ok(version.to_string())
-    } else {
-        Err("no workspace".into())
-    }
+fn shell(cmd: &str) -> Result<()> {
+    shell_with_stdin(cmd, "")
 }
 
-fn shell(cmd: &str) -> Result<()> {
-    println!("> {}", cmd.trim());
+fn shell_with_stdin(cmd: &str, stdin: &str) -> Result<()> {
     assert!(
         !cmd.contains('"'),
         "quoting and escaping command-line arguments is not supported"
     );
+
+    print!("> {}", cmd.trim());
+    if stdin.is_empty() {
+        println!();
+    } else {
+        println!(" <<<EOF");
+        if stdin.ends_with('\n') {
+            print!("{stdin}");
+        } else {
+            println!("{stdin}");
+        }
+        println!("EOF");
+    }
+
     if cfg!(test) {
         Ok(())
     } else {
-        let status = command(cmd).status()?;
+        let mut child = command(cmd).stdin(Stdio::piped()).spawn()?;
+        let mut child_stdin = child.stdin.take().unwrap();
+        child_stdin.write_all(stdin.as_bytes())?;
+        child_stdin.flush()?;
+        drop(child_stdin);
+
+        let status = child.wait()?;
         check_status(status)
     }
 }

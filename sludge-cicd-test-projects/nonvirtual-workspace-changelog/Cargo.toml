@@ -1,0 +1,6 @@
+[workspace]
+members = ["subpackage"]
+
+[package]
+name = "toplevel"
+version = "1.0.0"

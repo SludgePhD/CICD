@@ -1,4 +1,6 @@
-use crate::Result;
+use std::fmt;
+
+use crate::{utils::next_line, Result};
 
 pub enum Value<'a> {
     Str(&'a str),
@@ -16,6 +18,12 @@ impl<'a> Value<'a> {
 }
 
 pub struct Toml<'a>(pub &'a str);
+
+impl<'a> fmt::Debug for Toml<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 impl<'a> Toml<'a> {
     pub fn get_field(&self, name: &str) -> Result<Value<'a>> {
@@ -96,23 +104,6 @@ fn start_of_section_or_array(mut line: &str) -> Option<&str> {
     Some(name.trim())
 }
 
-fn next_line<'a>(text: &mut &'a str) -> Option<&'a str> {
-    match text.split_once('\n') {
-        Some((line, rest)) => {
-            *text = rest;
-            Some(line)
-        }
-        None => {
-            if text.is_empty() {
-                return None;
-            } else {
-                let line = *text;
-                *text = "";
-                Some(line)
-            }
-        }
-    }
-}
 #[cfg(test)]
 mod tests {
     use expect_test::expect;
@@ -172,11 +163,7 @@ mod tests {
             "#,
         );
 
-        let sections = toml
-            .sections()
-            .into_iter()
-            .map(|(name, toml)| (name, toml.0))
-            .collect::<Vec<_>>();
+        let sections = toml.sections();
         expect![[r#"
             [
                 (
