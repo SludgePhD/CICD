@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.22
+
+- Try to fix warning emission.
+
 ## v0.1.21
 
 - Fix how `GITHUB_TOKEN` is handled and emit a workflow warning when it's unset.

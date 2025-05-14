@@ -296,7 +296,7 @@ impl Params {
                     &relnotes,
                 )?;
             } else {
-                eprintln!("::warning `GITHUB_TOKEN` not set; cannot create GitHub release");
+                eprintln!("::warning::`GITHUB_TOKEN` not set; cannot create GitHub release");
             }
         }
 
