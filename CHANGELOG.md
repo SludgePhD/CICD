@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.23
+
+- No changes; this version is just for testing automatic GitHub releases.
+
 ## v0.1.22
 
 - Try to fix warning emission.
