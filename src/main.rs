@@ -43,6 +43,12 @@ fn try_main() -> Result<()> {
         Err(env::VarError::NotPresent) => None,
         Err(e @ env::VarError::NotUnicode(_)) => return Err(e.into()),
     };
+    let github_token = match env::var("GITHUB_TOKEN") {
+        Ok(s) if s.is_empty() => None,
+        Ok(s) => Some(s),
+        Err(env::VarError::NotPresent) => None,
+        Err(e @ env::VarError::NotUnicode(_)) => return Err(e.into()),
+    };
     let check_only = env::var_os("CICD_CHECK_ONLY").is_some();
     let skip_docs = env::var_os("CICD_SKIP_DOCS").is_some();
     let commit = env::var("GITHUB_SHA")?;
@@ -51,6 +57,7 @@ fn try_main() -> Result<()> {
         cwd,
         args,
         crates_io_token,
+        github_token,
         commit,
         check_only,
         skip_docs,
@@ -63,6 +70,7 @@ struct Params {
     cwd: PathBuf,
     args: Vec<String>,
     crates_io_token: Option<String>,
+    github_token: Option<String>,
     commit: String,
     check_only: bool,
     skip_docs: bool,
@@ -281,11 +289,15 @@ impl Params {
                 }
             }
 
-            let tag = format!("v{}", &to_publish[0].version);
-            shell_with_stdin(
-                &format!("gh release create {tag} --notes-file -"),
-                &relnotes,
-            )?;
+            if self.github_token.is_some() {
+                let tag = format!("v{}", &to_publish[0].version);
+                shell_with_stdin(
+                    &format!("gh release create {tag} --notes-file -"),
+                    &relnotes,
+                )?;
+            } else {
+                eprintln!("::warning `GITHUB_TOKEN` not set; cannot create GitHub release");
+            }
         }
 
         Ok(())
@@ -626,11 +638,8 @@ fn setup_environment(program: &str, cmd: &mut Command) {
     // passed to Cargo via `--token` when needed.
     cmd.env_remove("CRATES_IO_TOKEN");
 
-    // Only `git` needs the `GITHUB_TOKEN` for pushing tags (which needs to be configured with
-    // `contents: write` permission).
-    if program != "git" {
-        cmd.env_remove("GITHUB_TOKEN");
-    }
+    // The same goes for the `GITHUB_TOKEN`.
+    cmd.env_remove("GITHUB_TOKEN");
 
     match program {
         "cargo" => {

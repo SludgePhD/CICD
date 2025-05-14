@@ -76,6 +76,7 @@ impl Params {
             cwd: test_dir(subdir),
             args: Vec::new(),
             crates_io_token: Some("dummy-token".into()),
+            github_token: Some("github-dummy-token".into()),
             commit: test_commit.clone(),
             check_only: false,
             skip_docs: false,
