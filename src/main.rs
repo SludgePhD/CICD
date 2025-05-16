@@ -98,10 +98,33 @@ impl Params {
         }
     }
 
+    fn is_mock_test(&self) -> bool {
+        self.mock_output.is_some()
+    }
+
     fn run_cicd_pipeline(mut self) -> Result<()> {
+        self.step_info()?;
         self.step_test()?;
         self.step_gitcheck()?;
         self.step_publish()?;
+        Ok(())
+    }
+
+    fn step_info(&mut self) -> Result<()> {
+        if self.is_mock_test() {
+            // This is useless to mock and clutters up the test data.
+            return Ok(());
+        }
+
+        let _s = Section::new("INFO");
+        eprintln!(concat!(
+            env!("CARGO_PKG_NAME"),
+            " version ",
+            env!("CARGO_PKG_VERSION")
+        ));
+        shell("rustup toolchain list")?;
+        shell("rustc -Vv")?;
+        shell("git --version")?;
         Ok(())
     }
 
