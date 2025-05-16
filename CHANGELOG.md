@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.24
+
+- Print version information.
+  - Includes the `git` version, the `rustc -Vv` output, the list of installed Rust toolchains,
+    and the version of this CI/CD tool.
+
 ## v0.1.23
 
 - No changes; this version is just for testing automatic GitHub releases.
