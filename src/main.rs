@@ -632,7 +632,10 @@ fn shell_with_stdin(cmd: &str, stdin: &str) -> Result<()> {
     if cfg!(test) {
         Ok(())
     } else {
-        let mut child = command(cmd).stdin(Stdio::piped()).spawn()?;
+        let mut child = command(cmd)
+            .stdin(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("failed to execute '{cmd}': {e}"))?;
         let mut child_stdin = child.stdin.take().unwrap();
         child_stdin.write_all(stdin.as_bytes())?;
         child_stdin.flush()?;

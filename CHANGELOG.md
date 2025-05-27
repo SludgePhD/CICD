@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.25
+
+- Better error when spawning command fails.
+
 ## v0.1.24
 
 - Print version information.
