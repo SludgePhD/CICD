@@ -688,7 +688,7 @@ fn command_ex(cmd: &str, sudo: bool) -> Command {
 
         let mut command = Command::new("sudo");
         command.args(["-n", "-E", "--preserve-env=PATH"]);
-        command.arg(str::from_utf8(&output.stdout).unwrap());
+        command.arg(str::from_utf8(&output.stdout).unwrap().trim_ascii());
         command.args(args);
         dbg!(command)
     } else {
