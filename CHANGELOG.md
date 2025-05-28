@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.26
+
+- Allow running tests with `sudo` by setting `CICD_SUDO`.
+- Include value of `PATH` in info section.
+
 ## v0.1.25
 
 - Better error when spawning command fails.
