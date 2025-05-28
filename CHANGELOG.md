@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.28
+
+- Fix `sudo` logic on GitHub Actions runners.
+
 ## v0.1.27
 
 - Correctly set environment variables when `sudo` is used.
