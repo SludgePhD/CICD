@@ -25,7 +25,13 @@ jobs:
     - name: Install Rust toolchain
       run: rustup install stable --profile=minimal
 
-    - run: cargo run
+    - name: Test `sudo` functionality
+      run: cargo run
+      env:
+        CICD_SUDO: 1
+
+    - name: Test and Publish
+      run: cargo run
       env:
         CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

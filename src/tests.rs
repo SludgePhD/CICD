@@ -288,7 +288,7 @@ fn single_package_sudo() {
             BUILD_DOCS: 0.00ns
             ::endgroup::
             ::group::TEST
-            > sudo -n -E --preserve-env=PATH cargo test --workspace
+            > sudo cargo test --workspace
             TEST: 0.00ns
             ::endgroup::
             ::group::PUBLISH
