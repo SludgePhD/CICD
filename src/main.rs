@@ -690,7 +690,7 @@ fn command_ex(cmd: &str, sudo: bool) -> Command {
         command.args(["-n", "-E", "--preserve-env=PATH"]);
         command.arg(str::from_utf8(&output.stdout).unwrap());
         command.args(args);
-        command
+        dbg!(command)
     } else {
         let mut command = Command::new(program);
         command.args(args);
