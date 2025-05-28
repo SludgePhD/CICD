@@ -12,19 +12,12 @@ use std::{
     io::{self, stdout, Write as _},
     path::PathBuf,
     process::{self, Command, ExitStatus, Stdio},
+    str,
     time::{Duration, Instant},
 };
 
 use markdown::Markdown;
 use toml::{Toml, Value};
-
-/// The `sudo` invocation, to be used if the tests should be run as root.
-///
-/// - `-n` makes it exit with an error if interactive password entry is required.
-/// - `-E` preserves some unspecified, configuration-dependent subset of environment variables.
-/// - `--preserve-env=PATH` ensures that `PATH` is inherited (required on GHA runners so that
-///   `cargo` and `rustup` can be found).
-const SUDO: &str = "sudo -n -E --preserve-env=PATH";
 
 type Error = Box<dyn std::error::Error>;
 type Result<T> = std::result::Result<T, Error>;
@@ -168,12 +161,7 @@ impl Params {
 
         if !self.check_only {
             let _s = Section::new("TEST");
-            let sudo = if self.sudo {
-                [SUDO, " "].concat()
-            } else {
-                String::new()
-            };
-            shell(&format!("{sudo}cargo test --workspace {args}"))?;
+            shell_ex(&format!("cargo test --workspace {args}"), "", self.sudo)?;
         }
 
         Ok(())
@@ -571,6 +559,8 @@ fn sort_packages(pkgs: &mut [(Package, String)]) -> Vec<Package> {
     for (i, (pkg, manifest)) in pkgs.iter().enumerate() {
         let toml = Toml(&manifest);
         for (name, contents) in toml.sections() {
+            // FIXME: allow specifications like [target.'cfg(...)'.dependencies]
+            // FIXME: allow specifications like [dependencies.dep]\nversion = ...
             if !name.ends_with("dependencies") {
                 continue;
             }
@@ -632,12 +622,20 @@ fn shell(cmd: &str) -> Result<()> {
 }
 
 fn shell_with_stdin(cmd: &str, stdin: &str) -> Result<()> {
+    shell_ex(cmd, stdin, false)
+}
+
+fn shell_ex(cmd: &str, stdin: &str, sudo: bool) -> Result<()> {
     assert!(
         !cmd.contains('"'),
         "quoting and escaping command-line arguments is not supported"
     );
 
-    print!("> {}", cmd.trim());
+    print!(
+        "> {sudo}{cmd}",
+        sudo = sudo.then_some("sudo ").unwrap_or(""),
+        cmd = cmd.trim(),
+    );
     if stdin.is_empty() {
         println!();
     } else {
@@ -653,7 +651,7 @@ fn shell_with_stdin(cmd: &str, stdin: &str) -> Result<()> {
     if cfg!(test) {
         Ok(())
     } else {
-        let mut child = command(cmd)
+        let mut child = command_ex(cmd, sudo)
             .stdin(Stdio::piped())
             .spawn()
             .map_err(|e| format!("failed to execute '{cmd}': {e}"))?;
@@ -668,20 +666,37 @@ fn shell_with_stdin(cmd: &str, stdin: &str) -> Result<()> {
 }
 
 fn command(cmd: &str) -> Command {
+    command_ex(cmd, false)
+}
+
+fn command_ex(cmd: &str, sudo: bool) -> Command {
     let words = cmd
         .split_ascii_whitespace()
         .filter(|arg| !arg.trim().is_empty())
         .collect::<Vec<_>>();
     let (program, args) = words.split_first().unwrap();
-    let mut command = Command::new(program);
-    command.args(args);
 
-    let program = cmd
-        .trim_start_matches(SUDO)
-        .trim()
-        .split_ascii_whitespace()
-        .next()
-        .unwrap();
+    let mut command = if sudo {
+        // GHA runner VMs have a very strict sudo configuration that won't search the invoking
+        // user's PATH and makes preserving it difficult.
+        // We have to find the full path to the program ourselves.
+        let output = Command::new("which")
+            .arg(program)
+            .output()
+            .expect("failed to run `which`");
+        check_status(output.status).unwrap();
+
+        let mut command = Command::new("sudo");
+        command.args(["-n", "-E", "--preserve-env=PATH"]);
+        command.arg(str::from_utf8(&output.stdout).unwrap().trim_ascii());
+        command.args(args);
+        command
+    } else {
+        let mut command = Command::new(program);
+        command.args(args);
+        command
+    };
+
     setup_environment(program, &mut command);
 
     command
