@@ -9,7 +9,7 @@ use std::{
     env,
     fmt::{self, Write as _},
     fs,
-    io::{self, Write as _},
+    io::{self, stdout, Write as _},
     path::PathBuf,
     process::{self, Command, ExitStatus, Stdio},
     time::{Duration, Instant},
@@ -117,11 +117,16 @@ impl Params {
         }
 
         let _s = Section::new("INFO");
-        eprintln!(concat!(
+        println!(concat!(
             env!("CARGO_PKG_NAME"),
             " version ",
             env!("CARGO_PKG_VERSION")
         ));
+        print!("PATH=");
+        if let Some(path) = env::var_os("PATH") {
+            stdout().write_all(path.as_encoded_bytes())?;
+        }
+        println!();
         shell("rustup toolchain list")?;
         shell("rustc -Vv")?;
         shell("git --version")?;
