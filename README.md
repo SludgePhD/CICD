@@ -36,7 +36,8 @@ The `<args...>` arguments are passed to any `cargo check`, `cargo build` and `ca
 
 Variable | Meaning
 ---------|--------
-`GITHUB_TOKEN`    | GitHub Actions token. Needs to have `contents: write` permission is auto-publishing is used (for pushing tags and creating releases). Hidden from all subprocesses invoked, except those that require it.
+`GITHUB_TOKEN`    | GitHub Actions token. Needs to have `contents: write` permission if auto-publishing is used (for pushing tags and creating releases). Hidden from all subprocesses invoked, except those that require it.
 `CRATES_IO_TOKEN` | Token for auto-publishing new versions to crates.io. If absent, auto-publishing is disabled. The token is hidden from any subprocesses invoked.
 `CICD_CHECK_ONLY` | If set to any value, only `cargo check` is run for CI instead of running tests.
 `CICD_SKIP_DOCS`  | If set to any value, `cargo doc` will not be run to check documentation.
+`CICD_SUDO`       | If set to any value, tests will be executed (but not built) using `sudo`. OS must be configured to allow passwordless `sudo`.

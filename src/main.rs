@@ -18,6 +18,14 @@ use std::{
 use markdown::Markdown;
 use toml::{Toml, Value};
 
+/// The `sudo` invocation, to be used if the tests should be run as root.
+///
+/// - `-n` makes it exit with an error if interactive password entry is required.
+/// - `-E` preserves some unspecified, configuration-dependent subset of environment variables.
+/// - `--preserve-env=PATH` ensures that `PATH` is inherited (required on GHA runners so that
+///   `cargo` and `rustup` can be found).
+const SUDO: &str = "sudo -n -E --preserve-env=PATH";
+
 type Error = Box<dyn std::error::Error>;
 type Result<T> = std::result::Result<T, Error>;
 
@@ -51,6 +59,7 @@ fn try_main() -> Result<()> {
     };
     let check_only = env::var_os("CICD_CHECK_ONLY").is_some();
     let skip_docs = env::var_os("CICD_SKIP_DOCS").is_some();
+    let sudo = env::var_os("CICD_SUDO").is_some();
     let commit = env::var("GITHUB_SHA")?;
 
     Params {
@@ -61,6 +70,7 @@ fn try_main() -> Result<()> {
         commit,
         check_only,
         skip_docs,
+        sudo,
         mock_output: None,
     }
     .run_cicd_pipeline()
@@ -74,6 +84,7 @@ struct Params {
     commit: String,
     check_only: bool,
     skip_docs: bool,
+    sudo: bool,
     mock_output: Option<Vec<(&'static str, String)>>,
 }
 
@@ -157,7 +168,12 @@ impl Params {
 
         if !self.check_only {
             let _s = Section::new("TEST");
-            shell(&format!("cargo test --workspace {args}"))?;
+            let sudo = if self.sudo {
+                [SUDO, " "].concat()
+            } else {
+                String::new()
+            };
+            shell(&format!("{sudo}cargo test --workspace {args}"))?;
         }
 
         Ok(())

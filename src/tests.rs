@@ -80,6 +80,7 @@ impl Params {
             commit: test_commit.clone(),
             check_only: false,
             skip_docs: false,
+            sudo: false,
             mock_output: Some(vec![
                 ("git status --porcelain", "".into()),
                 ("git rev-parse HEAD", test_commit),
@@ -102,6 +103,11 @@ impl Params {
 
     fn with_tags(mut self, tags: &[&str]) -> Self {
         self.replace_output("git tag --list", tags.join("\n"));
+        self
+    }
+
+    fn with_sudo(mut self) -> Self {
+        self.sudo = true;
         self
     }
 }
@@ -262,6 +268,37 @@ fn single_package_existing_tag() {
             existing git tags: ["single-package-v2.2.2"]
             publishable packages in workspace: [single-package@2.2.2]
             no packages need publishing, done
+            PUBLISH: 0.00ns
+            ::endgroup::
+        "#]],
+    );
+}
+
+#[test]
+fn single_package_sudo() {
+    check_output(
+        Params::test("single-package").with_sudo(),
+        expect![[r#"
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > sudo -n -E --preserve-env=PATH cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+            ::group::PUBLISH
+            existing git tags: []
+            publishable packages in workspace: [single-package@2.2.2]
+            1 package needs publishing: [single-package@2.2.2]
+            publishing single-package@2.2.2
+            > cargo publish --no-verify -p single-package --token dummy-token
+            > git tag v2.2.2
+            > git push --tags
             PUBLISH: 0.00ns
             ::endgroup::
         "#]],
