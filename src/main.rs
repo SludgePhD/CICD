@@ -675,7 +675,15 @@ fn command(cmd: &str) -> Command {
     let (program, args) = words.split_first().unwrap();
     let mut command = Command::new(program);
     command.args(args);
+
+    let program = cmd
+        .trim_start_matches(SUDO)
+        .trim()
+        .split_ascii_whitespace()
+        .next()
+        .unwrap();
     setup_environment(program, &mut command);
+
     command
 }
 

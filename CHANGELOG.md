@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.27
+
+- Correctly set environment variables when `sudo` is used.
+
 ## v0.1.26
 
 - Allow running tests with `sudo` by setting `CICD_SUDO`.
