@@ -6,7 +6,7 @@ mod toml;
 mod utils;
 
 use std::{
-    env,
+    env::{self, VarError},
     fmt::{self, Write as _},
     fs,
     io::{self, stdout, Write as _},
@@ -37,7 +37,7 @@ fn main() {
 
 fn try_main() -> Result<()> {
     let cwd = env::current_dir()?;
-    let args = env::args().skip(1).collect::<Vec<_>>();
+    let args = env::args().skip(1).collect::<Vec<_>>().join(" ");
     let crates_io_token = match env::var("CRATES_IO_TOKEN") {
         Ok(s) if s.is_empty() => None,
         Ok(s) => Some(s),
@@ -54,6 +54,11 @@ fn try_main() -> Result<()> {
     let skip_docs = env::var_os("CICD_SKIP_DOCS").is_some();
     let sudo = env::var_os("CICD_SUDO").is_some();
     let commit = env::var("GITHUB_SHA")?;
+    let cargo_doc_flags = match env::var("CICD_CARGO_DOC_FLAGS") {
+        Ok(s) => s,
+        Err(VarError::NotPresent) => args.clone(),
+        Err(e @ VarError::NotUnicode(_)) => return Err(e.into()),
+    };
 
     Params {
         cwd,
@@ -61,6 +66,7 @@ fn try_main() -> Result<()> {
         crates_io_token,
         github_token,
         commit,
+        cargo_doc_flags,
         check_only,
         skip_docs,
         sudo,
@@ -71,10 +77,11 @@ fn try_main() -> Result<()> {
 
 struct Params {
     cwd: PathBuf,
-    args: Vec<String>,
+    args: String,
     crates_io_token: Option<String>,
     github_token: Option<String>,
     commit: String,
+    cargo_doc_flags: String,
     check_only: bool,
     skip_docs: bool,
     sudo: bool,
@@ -138,7 +145,7 @@ impl Params {
     }
 
     fn step_test(&mut self) -> Result<()> {
-        let args = self.args.join(" ");
+        let args = &self.args;
         let cargo_toml = self.cwd.join("Cargo.toml");
         assert!(
             cargo_toml.exists(),
@@ -156,7 +163,7 @@ impl Params {
 
         if !self.skip_docs {
             let _s = Section::new("BUILD_DOCS");
-            shell("cargo doc --workspace")?;
+            shell(&format!("cargo doc --workspace {}", self.cargo_doc_flags))?;
         }
 
         if !self.check_only {

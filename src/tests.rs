@@ -74,10 +74,11 @@ impl Params {
         let test_commit = "1234567890abcdef".to_string();
         Self {
             cwd: test_dir(subdir),
-            args: Vec::new(),
+            args: String::new(),
             crates_io_token: Some("dummy-token".into()),
             github_token: Some("github-dummy-token".into()),
             commit: test_commit.clone(),
+            cargo_doc_flags: String::new(),
             check_only: false,
             skip_docs: false,
             sudo: false,
