@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.29
+
+- Arguments passed to `sludge-cicd` are now also passed to the `cargo doc` invocation, not just to
+  `cargo test`.
+- If this is undesired, `CICD_CARGO_DOC_FLAGS` can be set to override the arguments.
+
 ## v0.1.28
 
 - Fix `sudo` logic on GitHub Actions runners.
