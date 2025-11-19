@@ -18,8 +18,10 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v5
       with:
+        # this is needed so that tags are fetched, which the CICD tool needs to determine if a
+        # new release needs to be cut
         fetch-depth: 0
 
     - name: Install Rust toolchain
