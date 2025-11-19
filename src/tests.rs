@@ -317,9 +317,48 @@ fn workspace_inheritance() {
             ]
         "#]],
     );
+    check_find_packages(
+        "workspace-inheritance2",
+        expect![[r#"
+            [
+                version-normal@4.5.6,
+                version-workspace@555.222.333,
+            ]
+        "#]],
+    );
 
     check_output(
         Params::test("workspace-inheritance"),
+        expect![[r#"
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+            ::group::PUBLISH
+            existing git tags: []
+            publishable packages in workspace: [version-normal@4.5.6, version-workspace@555.222.333]
+            2 packages need publishing: [version-normal@4.5.6, version-workspace@555.222.333]
+            publishing version-normal@4.5.6
+            > cargo publish --no-verify -p version-normal --token dummy-token
+            publishing version-workspace@555.222.333
+            > cargo publish --no-verify -p version-workspace --token dummy-token
+            > git tag version-normal-v4.5.6
+            > git tag version-workspace-v555.222.333
+            > git push --tags
+            PUBLISH: 0.00ns
+            ::endgroup::
+        "#]],
+    );
+    check_output(
+        Params::test("workspace-inheritance2"),
         expect![[r#"
             ::group::BUILD
             > cargo test --workspace --no-run

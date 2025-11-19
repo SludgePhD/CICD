@@ -443,7 +443,13 @@ impl Workspace {
                         .ok_or("version is not a string")?
                         .to_string(),
                 ),
-                Err(_) => None,
+                Err(_) => Toml(&manifest)
+                    .section("workspace.package")
+                    .and_then(|toml| {
+                        toml.get_field("version")
+                            .ok()
+                            .and_then(|fld| fld.as_str().map(ToString::to_string))
+                    }),
             },
             Err(e) if e.kind() == io::ErrorKind::NotFound => None,
             Err(e) => return Err(e.into()),

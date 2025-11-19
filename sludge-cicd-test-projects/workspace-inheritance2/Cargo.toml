@@ -1,0 +1,7 @@
+[workspace]
+members = ["*/"]
+exclude = ["target"]
+
+# Tests a different syntax from `workspace-inheritance`.
+[workspace.package]
+version = "555.222.333"

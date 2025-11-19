@@ -85,6 +85,12 @@ impl<'a> Toml<'a> {
 
         out
     }
+
+    pub fn section(&self, name: &str) -> Option<Toml<'_>> {
+        self.sections()
+            .into_iter()
+            .find_map(|(n, toml)| if name == n { Some(toml) } else { None })
+    }
 }
 
 fn start_of_section_or_array(mut line: &str) -> Option<&str> {
