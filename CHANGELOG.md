@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.30
+
+- Support additional Cargo.toml syntax for inheriting package versions from the workspace manifest.
+
 ## v0.1.29
 
 - Arguments passed to `sludge-cicd` are now also passed to the `cargo doc` invocation, not just to
