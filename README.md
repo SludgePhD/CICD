@@ -41,3 +41,4 @@ Variable | Meaning
 `CICD_CHECK_ONLY` | If set to any value, only `cargo check` is run for CI instead of running tests.
 `CICD_SKIP_DOCS`  | If set to any value, `cargo doc` will not be run to check documentation.
 `CICD_SUDO`       | If set to any value, tests will be executed (but not built) using `sudo`. OS must be configured to allow passwordless `sudo`.
+`CICD_CARGO_DOC_FLAGS` | Overrides the arguments passed to `cargo doc` (by default, all arguments passed to `sludge-cicd` will be passed).
