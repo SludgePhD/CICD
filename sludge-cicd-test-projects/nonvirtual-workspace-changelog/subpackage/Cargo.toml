@@ -1,3 +1,5 @@
 [package]
 name = "subpackage"
 version = "1.0.0"
+license = "0BSD"
+description = "bla"

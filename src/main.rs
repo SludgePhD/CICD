@@ -60,7 +60,7 @@ fn try_main() -> Result<()> {
         Err(e @ VarError::NotUnicode(_)) => return Err(e.into()),
     };
 
-    Params {
+    let params = Params {
         cwd,
         args,
         crates_io_token,
@@ -71,8 +71,8 @@ fn try_main() -> Result<()> {
         skip_docs,
         sudo,
         mock_output: None,
-    }
-    .run_cicd_pipeline()
+    };
+    Pipeline::new(params)?.run()
 }
 
 struct Params {
@@ -88,41 +88,34 @@ struct Params {
     mock_output: Option<Vec<(&'static str, String)>>,
 }
 
-impl Params {
-    fn shell_output(&mut self, cmd: &str) -> Result<String> {
-        match &mut self.mock_output {
-            Some(output) => {
-                if output.is_empty() {
-                    panic!("missing entry for '{cmd}' in mock output list");
-                }
-                let (expected_cmd, output) = output.remove(0);
-                assert_eq!(expected_cmd, cmd);
-                Ok(output)
-            }
-            None => {
-                let output = command(cmd).stderr(Stdio::inherit()).output()?;
-                check_status(output.status)?;
-                let res = String::from_utf8(output.stdout)?;
-                let res = res.trim().to_string();
-                Ok(res)
-            }
-        }
+struct Pipeline {
+    params: Params,
+    packages: Vec<Package>,
+}
+
+impl Pipeline {
+    fn new(params: Params) -> Result<Self> {
+        let _s = Section::new("INIT");
+
+        let workspace = Workspace::get(params.cwd.clone())?;
+        let mut packages = workspace.find_packages()?;
+
+        extract_release_notes(&mut packages, &workspace)?;
+
+        Ok(Self { params, packages })
     }
 
-    fn is_mock_test(&self) -> bool {
-        self.mock_output.is_some()
-    }
-
-    fn run_cicd_pipeline(mut self) -> Result<()> {
+    fn run(mut self) -> Result<()> {
         self.step_info()?;
         self.step_test()?;
         self.step_gitcheck()?;
+        self.step_manifest_check()?;
         self.step_publish()?;
         Ok(())
     }
 
     fn step_info(&mut self) -> Result<()> {
-        if self.is_mock_test() {
+        if self.params.is_mock_test() {
             // This is useless to mock and clutters up the test data.
             return Ok(());
         }
@@ -145,15 +138,15 @@ impl Params {
     }
 
     fn step_test(&mut self) -> Result<()> {
-        let args = &self.args;
-        let cargo_toml = self.cwd.join("Cargo.toml");
+        let args = &self.params.args;
+        let cargo_toml = self.params.cwd.join("Cargo.toml");
         assert!(
             cargo_toml.exists(),
             "Cargo.toml not found, cwd: {}",
-            self.cwd.display()
+            self.params.cwd.display()
         );
 
-        if self.check_only {
+        if self.params.check_only {
             let _s = Section::new("CHECK");
             shell(&format!("cargo check --workspace {args}"))?;
         } else {
@@ -161,14 +154,21 @@ impl Params {
             shell(&format!("cargo test --workspace --no-run {args}"))?;
         }
 
-        if !self.skip_docs {
+        if !self.params.skip_docs {
             let _s = Section::new("BUILD_DOCS");
-            shell(&format!("cargo doc --workspace {}", self.cargo_doc_flags))?;
+            shell(&format!(
+                "cargo doc --workspace {}",
+                self.params.cargo_doc_flags
+            ))?;
         }
 
-        if !self.check_only {
+        if !self.params.check_only {
             let _s = Section::new("TEST");
-            shell_ex(&format!("cargo test --workspace {args}"), "", self.sudo)?;
+            shell_ex(
+                &format!("cargo test --workspace {args}"),
+                "",
+                self.params.sudo,
+            )?;
         }
 
         Ok(())
@@ -180,18 +180,18 @@ impl Params {
     /// no files staged.
     fn step_gitcheck(&mut self) -> Result<()> {
         // Deny untracked and changed files, and staged changes.
-        let files = self.shell_output("git status --porcelain")?;
+        let files = self.params.shell_output("git status --porcelain")?;
         if !files.trim().is_empty() {
             return Err(format!("untracked/modified files present: {files}").into());
         }
 
         // Ensure that HEAD is still at the expected git commit.
-        let commit = self.shell_output("git rev-parse HEAD")?;
+        let commit = self.params.shell_output("git rev-parse HEAD")?;
         let commit = commit.trim();
-        if self.commit != commit {
+        if self.params.commit != commit {
             return Err(format!(
                 "repo is at unexpected commit {commit} (expected {})",
-                self.commit
+                self.params.commit
             )
             .into());
         }
@@ -199,34 +199,54 @@ impl Params {
         Ok(())
     }
 
+    fn step_manifest_check(&self) -> Result<()> {
+        for Package { name, manifest, .. } in &self.packages {
+            let toml = Toml(manifest);
+            if !toml.get_field("description").is_ok()
+                && !toml.get_field("description.workspace").is_ok()
+            {
+                bail!("package `{name}` is missing a description field");
+            }
+
+            if !toml.get_field("license").is_ok() && !toml.get_field("license.workspace").is_ok() {
+                bail!("package `{name}` is missing a license field");
+            }
+        }
+
+        Ok(())
+    }
+
     fn step_publish(&mut self) -> Result<()> {
-        let current_branch = self.shell_output("git branch --show-current")?;
+        let current_branch = self.params.shell_output("git branch --show-current")?;
         let _s = Section::new("PUBLISH");
 
-        let tags_string = self.shell_output("git tag --list")?;
+        let tags_string = self.params.shell_output("git tag --list")?;
         let tags = tags_string.split_whitespace().collect::<Vec<_>>();
         println!("existing git tags: {tags:?}");
 
-        let workspace = Workspace::get(self.cwd.clone())?;
-        let mut packages = workspace.find_packages()?;
-        if packages.is_empty() {
-            bail!("no publishable packages found in '{}'", self.cwd.display());
+        if self.packages.is_empty() {
+            bail!(
+                "no publishable packages found in '{}'",
+                self.params.cwd.display()
+            );
         }
-        println!("publishable packages in workspace: {:?}", packages);
+        println!("publishable packages in workspace: {:?}", self.packages);
 
-        let same_version = packages
+        let same_version = self
+            .packages
             .iter()
-            .all(|pkg| pkg.version == packages[0].version);
+            .all(|pkg| pkg.version == self.packages[0].version);
         let has_package_specific_changelog =
-            packages.iter().any(|pkg| pkg.changelog_path.is_some());
+            self.packages.iter().any(|pkg| pkg.changelog_path.is_some());
         let separate_tags = has_package_specific_changelog
             || !same_version
-            || tags.iter().any(|tag| tag.ends_with(&packages[0].version));
+            || tags
+                .iter()
+                .any(|tag| tag.ends_with(&self.packages[0].version));
 
-        self.extract_release_notes(&mut packages, &workspace)?;
-
-        let to_publish = packages
-            .into_iter()
+        let to_publish = self
+            .packages
+            .iter()
             .filter(|Package { name, version, .. }| {
                 !tags.contains(&&*format!("v{version}"))
                     && !tags.contains(&&*format!("{name}-v{version}"))
@@ -245,7 +265,7 @@ impl Params {
             to_publish
         );
 
-        let Some(token) = self.crates_io_token.clone() else {
+        let Some(token) = self.params.crates_io_token.clone() else {
             println!("no `CRATES_IO_TOKEN` set, skipping autopublish step");
             return Ok(());
         };
@@ -326,7 +346,7 @@ impl Params {
                 }
             }
 
-            if self.github_token.is_some() {
+            if self.params.github_token.is_some() {
                 let tag = format!("v{}", &to_publish[0].version);
                 shell_with_stdin(
                     &format!("gh release create {tag} --notes-file -"),
@@ -339,66 +359,92 @@ impl Params {
 
         Ok(())
     }
+}
 
-    fn extract_release_notes(&self, packages: &mut [Package], workspace: &Workspace) -> Result<()> {
-        for package in packages {
-            let Some(changelog_path) = package
-                .changelog_path
-                .as_deref()
-                .or(workspace.changelog.as_deref())
-            else {
-                continue;
-            };
+fn extract_release_notes(packages: &mut [Package], workspace: &Workspace) -> Result<()> {
+    for package in packages {
+        let Some(changelog_path) = package
+            .changelog_path
+            .as_deref()
+            .or(workspace.changelog.as_deref())
+        else {
+            continue;
+        };
 
-            // There is a package-specific changelog. It has to contain a single heading for the
-            // version we're about to release.
-            let changelog = fs::read_to_string(changelog_path)?;
+        // There is a package-specific changelog. It has to contain a single heading for the
+        // version we're about to release.
+        let changelog = fs::read_to_string(changelog_path)?;
 
-            let mut entries_matching_version = Vec::new();
-            for level in 1..=3 {
-                for (title, contents) in Markdown(&changelog).sections(level) {
-                    if title.contains(&*package.version) {
-                        entries_matching_version.push((title, contents.0));
-                    }
-                }
-                if !entries_matching_version.is_empty() {
-                    break;
+        let mut entries_matching_version = Vec::new();
+        for level in 1..=3 {
+            for (title, contents) in Markdown(&changelog).sections(level) {
+                if title.contains(&*package.version) {
+                    entries_matching_version.push((title, contents.0));
                 }
             }
-
-            let entry = match *entries_matching_version {
-                [] => bail!(
-                    "changelog at '{}' does not contain an entry for {package}",
-                    changelog_path.display()
-                ),
-                [(_, contents)] => contents,
-                [ref multiple @ ..] => {
-                    let mut entry_containing_name = None;
-                    for (title, contents) in multiple {
-                        if title.to_ascii_lowercase().contains(&package.name) {
-                            if entry_containing_name.is_some() {
-                                bail!(
-                                    "changelog '{}' contains multiple entries for {package}",
-                                    changelog_path.display()
-                                );
-                            }
-                            entry_containing_name = Some(*contents);
-                        }
-                    }
-                    match entry_containing_name {
-                        Some(contents) => contents,
-                        None => bail!(
-                            "changelog '{}' is missing an entry for {package}",
-                            changelog_path.display()
-                        ),
-                    }
-                }
-            };
-
-            package.release_notes = Some(entry.to_string());
+            if !entries_matching_version.is_empty() {
+                break;
+            }
         }
 
-        Ok(())
+        let entry = match *entries_matching_version {
+            [] => bail!(
+                "changelog at '{}' does not contain an entry for {package}",
+                changelog_path.display()
+            ),
+            [(_, contents)] => contents,
+            [ref multiple @ ..] => {
+                let mut entry_containing_name = None;
+                for (title, contents) in multiple {
+                    if title.to_ascii_lowercase().contains(&package.name) {
+                        if entry_containing_name.is_some() {
+                            bail!(
+                                "changelog '{}' contains multiple entries for {package}",
+                                changelog_path.display()
+                            );
+                        }
+                        entry_containing_name = Some(*contents);
+                    }
+                }
+                match entry_containing_name {
+                    Some(contents) => contents,
+                    None => bail!(
+                        "changelog '{}' is missing an entry for {package}",
+                        changelog_path.display()
+                    ),
+                }
+            }
+        };
+
+        package.release_notes = Some(entry.to_string());
+    }
+
+    Ok(())
+}
+
+impl Params {
+    fn shell_output(&mut self, cmd: &str) -> Result<String> {
+        match &mut self.mock_output {
+            Some(output) => {
+                if output.is_empty() {
+                    panic!("missing entry for '{cmd}' in mock output list");
+                }
+                let (expected_cmd, output) = output.remove(0);
+                assert_eq!(expected_cmd, cmd);
+                Ok(output)
+            }
+            None => {
+                let output = command(cmd).stderr(Stdio::inherit()).output()?;
+                check_status(output.status)?;
+                let res = String::from_utf8(output.stdout)?;
+                let res = res.trim().to_string();
+                Ok(res)
+            }
+        }
+    }
+
+    fn is_mock_test(&self) -> bool {
+        self.mock_output.is_some()
     }
 }
 
@@ -411,6 +457,8 @@ struct Package {
     changelog_path: Option<PathBuf>,
     /// Set to the changelog contents for this package version when we're about to publish it.
     release_notes: Option<String>,
+    /// Contents of the package's `Cargo.toml`.
+    manifest: String,
 }
 
 impl fmt::Display for Package {
@@ -472,11 +520,7 @@ impl Workspace {
     /// A package is considered publishable if it does not set `publish = false` and it contains a
     /// `package.version` key.
     fn find_packages(&self) -> Result<Vec<Package>> {
-        fn recurse(
-            dir: PathBuf,
-            out: &mut Vec<(Package, String)>,
-            workspace: &Workspace,
-        ) -> Result<()> {
+        fn recurse(dir: PathBuf, out: &mut Vec<Package>, workspace: &Workspace) -> Result<()> {
             let mut toml = dir.clone();
             toml.push("Cargo.toml");
             if toml.exists() {
@@ -515,15 +559,13 @@ impl Workspace {
                         None
                     };
 
-                    out.push((
-                        Package {
-                            name,
-                            version,
-                            changelog_path: changelog,
-                            release_notes: None,
-                        },
+                    out.push(Package {
+                        name,
+                        version,
+                        changelog_path: changelog,
+                        release_notes: None,
                         manifest,
-                    ));
+                    });
                 }
             }
 
@@ -561,18 +603,18 @@ impl Workspace {
 ///
 /// Cargo will wait until crates.io makes the package available, but we have to publish them in the
 /// right order. That means topologically sorting an approximation of the dependency graph.
-fn sort_packages(pkgs: &mut [(Package, String)]) -> Vec<Package> {
+fn sort_packages(pkgs: &mut [Package]) -> Vec<Package> {
     if pkgs.is_empty() {
         return Vec::new();
     }
 
     // Start with a deterministic ordering.
-    pkgs.sort_by_key(|(pkg, _)| pkg.name.clone());
+    pkgs.sort_by_key(|pkg| pkg.name.clone());
 
     let mut depends_on = vec![vec![]; pkgs.len()];
     let mut dependants = vec![0; pkgs.len()];
-    for (i, (pkg, manifest)) in pkgs.iter().enumerate() {
-        let toml = Toml(&manifest);
+    for (i, pkg) in pkgs.iter().enumerate() {
+        let toml = Toml(&pkg.manifest);
         for (name, contents) in toml.sections() {
             // FIXME: allow specifications like [target.'cfg(...)'.dependencies]
             // FIXME: allow specifications like [dependencies.dep]\nversion = ...
@@ -590,11 +632,7 @@ fn sort_packages(pkgs: &mut [(Package, String)]) -> Vec<Package> {
                     continue;
                 };
                 let dep = dep.split('.').next().unwrap().trim();
-                if let Some((pos, (dep, _))) = pkgs
-                    .iter()
-                    .enumerate()
-                    .find(|(_, (pkg, _))| pkg.name == dep)
-                {
+                if let Some((pos, dep)) = pkgs.iter().enumerate().find(|(_, pkg)| pkg.name == dep) {
                     if !depends_on[i].contains(&pos) {
                         println!("{pkg} depends on {dep}");
                         depends_on[i].push(pos);
@@ -614,7 +652,7 @@ fn sort_packages(pkgs: &mut [(Package, String)]) -> Vec<Package> {
 
     let mut list = Vec::new();
     while let Some(i) = eligible_nodes.pop() {
-        list.push(pkgs[i].0.clone());
+        list.push(pkgs[i].clone());
         for &dep in &depends_on[i] {
             dependants[dep] -= 1;
             if dependants[dep] == 0 {

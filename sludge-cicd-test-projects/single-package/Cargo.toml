@@ -1,3 +1,5 @@
 [package]
 name = "single-package"
 version = "2.2.2"
+license.workspace = true
+description = "bla"

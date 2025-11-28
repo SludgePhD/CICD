@@ -4,7 +4,7 @@ use std::{cell::RefCell, path::PathBuf};
 
 use expect_test::{expect, Expect};
 
-use crate::{Params, Workspace};
+use crate::{Params, Pipeline, Workspace};
 
 #[allow(unused_macros)]
 macro_rules! print {
@@ -116,10 +116,19 @@ impl Params {
 fn check_output(params: Params, expect: Expect) {
     OUTPUT.replace(String::new());
 
-    params.run_cicd_pipeline().unwrap();
+    Pipeline::new(params).unwrap().run().unwrap();
 
     let output = OUTPUT.take();
     expect.assert_eq(&output);
+}
+fn check_error(params: Params, expect: Expect) {
+    let error = Pipeline::new(params)
+        .unwrap()
+        .run()
+        .unwrap_err()
+        .to_string();
+
+    expect.assert_eq(&error);
 }
 
 fn check_find_packages(subdir: &str, expect: Expect) {
@@ -159,6 +168,18 @@ fn project_dir_has_no_manifest() {
 }
 
 #[test]
+fn missing_metadata() {
+    check_error(
+        Params::test("no-license"),
+        expect!["package `mypkg` is missing a license field"],
+    );
+    check_error(
+        Params::test("no-description"),
+        expect!["package `mypkg` is missing a description field"],
+    );
+}
+
+#[test]
 fn single_package() {
     check_find_packages(
         "single-package",
@@ -172,6 +193,9 @@ fn single_package() {
     check_output(
         Params::test("single-package"),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -199,6 +223,9 @@ fn single_package() {
     check_output(
         Params::test("single-package").with_tags(&["v2.2.1"]),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -230,6 +257,9 @@ fn single_package_existing_tag() {
     check_output(
         Params::test("single-package").with_tags(&["v2.2.2"]),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -253,6 +283,9 @@ fn single_package_existing_tag() {
     check_output(
         Params::test("single-package").with_tags(&["single-package-v2.2.2"]),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -280,6 +313,9 @@ fn single_package_sudo() {
     check_output(
         Params::test("single-package").with_sudo(),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -330,6 +366,9 @@ fn workspace_inheritance() {
     check_output(
         Params::test("workspace-inheritance"),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -360,6 +399,9 @@ fn workspace_inheritance() {
     check_output(
         Params::test("workspace-inheritance2"),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -404,6 +446,10 @@ fn synced_derive() {
     check_output(
         Params::test("synced-derive"),
         expect![[r#"
+            ::group::INIT
+            mylib@0.1.2 depends on mylib-derive@0.1.2
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -418,7 +464,6 @@ fn synced_derive() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            mylib@0.1.2 depends on mylib-derive@0.1.2
             publishable packages in workspace: [mylib-derive@0.1.2, mylib@0.1.2]
             2 packages need publishing: [mylib-derive@0.1.2, mylib@0.1.2]
             publishing mylib-derive@0.1.2
@@ -434,6 +479,10 @@ fn synced_derive() {
     check_output(
         Params::test("synced-derive").with_tags(&["v0.1.2"]),
         expect![[r#"
+            ::group::INIT
+            mylib@0.1.2 depends on mylib-derive@0.1.2
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -448,7 +497,6 @@ fn synced_derive() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: ["v0.1.2"]
-            mylib@0.1.2 depends on mylib-derive@0.1.2
             publishable packages in workspace: [mylib-derive@0.1.2, mylib@0.1.2]
             no packages need publishing, done
             PUBLISH: 0.00ns
@@ -458,6 +506,10 @@ fn synced_derive() {
     check_output(
         Params::test("synced-derive").with_tags(&["mylib-v0.1.2"]),
         expect![[r#"
+            ::group::INIT
+            mylib@0.1.2 depends on mylib-derive@0.1.2
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -472,7 +524,6 @@ fn synced_derive() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: ["mylib-v0.1.2"]
-            mylib@0.1.2 depends on mylib-derive@0.1.2
             publishable packages in workspace: [mylib-derive@0.1.2, mylib@0.1.2]
             1 package needs publishing: [mylib-derive@0.1.2]
             publishing mylib-derive@0.1.2
@@ -490,6 +541,12 @@ fn dep_graph() {
     check_output(
         Params::test("graph"),
         expect![[r#"
+            ::group::INIT
+            b@0.1.0 depends on a@0.1.0
+            b@0.1.0 depends on d@0.1.0
+            c@0.1.0 depends on a@0.1.0
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -504,9 +561,6 @@ fn dep_graph() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            b@0.1.0 depends on a@0.1.0
-            b@0.1.0 depends on d@0.1.0
-            c@0.1.0 depends on a@0.1.0
             publishable packages in workspace: [a@0.1.0, d@0.1.0, b@0.1.0, c@0.1.0]
             4 packages need publishing: [a@0.1.0, d@0.1.0, b@0.1.0, c@0.1.0]
             publishing a@0.1.0
@@ -532,6 +586,9 @@ fn nonvirtual_workspace_changelog() {
     check_output(
         Params::test("nonvirtual-workspace-changelog"),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -582,6 +639,9 @@ fn nonvirtual_workspace_changelog() {
     check_output(
         Params::test("nonvirtual-workspace-changelog").with_tags(&["subpackage-v1.0.0"]),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -624,6 +684,9 @@ fn single_package_changelog() {
     check_output(
         Params::test("single-package-changelog"),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -658,6 +721,9 @@ fn multiple_changelogs() {
     check_output(
         Params::test("workspace-with-package-changelog"),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -698,6 +764,9 @@ fn changelog_shared() {
     check_output(
         Params::test("changelog-shared"),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns
@@ -731,6 +800,9 @@ fn changelog_shared() {
     check_output(
         Params::test("changelog-shared").with_tags(&["shared-v0.1.0"]),
         expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
             ::group::BUILD
             > cargo test --workspace --no-run
             BUILD: 0.00ns

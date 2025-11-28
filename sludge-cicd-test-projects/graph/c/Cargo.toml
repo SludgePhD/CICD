@@ -1,6 +1,8 @@
 [package]
 name = "c"
 version = "0.1.0"
+license = "0BSD"
+description = "bla"
 
 [dependencies]
 a.path = "../a"

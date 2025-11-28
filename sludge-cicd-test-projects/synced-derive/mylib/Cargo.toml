@@ -1,6 +1,8 @@
 [package]
 name = "mylib"
 version = "0.1.2"
+license = "0BSD"
+description = "bla"
 
 [dependencies]
 mylib-derive = { path = "../mylib-derive", version = "=0.1.2" }

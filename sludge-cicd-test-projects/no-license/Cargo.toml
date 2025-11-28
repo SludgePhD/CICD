@@ -1,0 +1,5 @@
+[package]
+name = "mypkg"
+version = "1.2.3"
+description = "bla"
+# no license field, which is an error when publishing to crates.io, so the CICD tool catches it early

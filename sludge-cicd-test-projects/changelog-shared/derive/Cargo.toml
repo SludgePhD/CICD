@@ -1,3 +1,5 @@
 [package]
 name = "derive"
 version = "0.1.0"
+license = "0BSD"
+description = "bla"
