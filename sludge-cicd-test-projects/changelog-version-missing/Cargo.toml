@@ -1,0 +1,5 @@
+[package]
+name = "mypkg"
+version = "0.1.1" # this version does not have an entry in the changelog
+license = "0BSD"
+description = "bla"

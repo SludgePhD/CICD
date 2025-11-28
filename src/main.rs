@@ -363,7 +363,7 @@ impl Pipeline {
 
 fn extract_release_notes(packages: &mut [Package], workspace: &Workspace) -> Result<()> {
     for package in packages {
-        let Some(changelog_path) = package
+        let Some(mut changelog_path) = package
             .changelog_path
             .as_deref()
             .or(workspace.changelog.as_deref())
@@ -374,6 +374,11 @@ fn extract_release_notes(packages: &mut [Package], workspace: &Workspace) -> Res
         // There is a package-specific changelog. It has to contain a single heading for the
         // version we're about to release.
         let changelog = fs::read_to_string(changelog_path)?;
+
+        // For display purposes, ensure that no absolute paths end up in the snapshot tests.
+        if let Ok(p) = changelog_path.strip_prefix(env!("CARGO_MANIFEST_DIR")) {
+            changelog_path = p;
+        }
 
         let mut entries_matching_version = Vec::new();
         for level in 1..=3 {

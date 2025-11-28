@@ -121,14 +121,22 @@ fn check_output(params: Params, expect: Expect) {
     let output = OUTPUT.take();
     expect.assert_eq(&output);
 }
-fn check_error(params: Params, expect: Expect) {
-    let error = Pipeline::new(params)
-        .unwrap()
-        .run()
-        .unwrap_err()
-        .to_string();
+fn check_error(params: Params, expected_error: Expect, expected_output: Expect) {
+    OUTPUT.replace(String::new());
 
-    expect.assert_eq(&error);
+    let error = match Pipeline::new(params) {
+        Ok(pipe) => pipe.run().unwrap_err(),
+        Err(e) => e,
+    };
+
+    let mut string = error.to_string();
+    if !string.ends_with('\n') {
+        string.push('\n');
+    }
+    expected_error.assert_eq(&string);
+
+    let output = OUTPUT.take();
+    expected_output.assert_eq(&output);
 }
 
 fn check_find_packages(subdir: &str, expect: Expect) {
@@ -171,11 +179,49 @@ fn project_dir_has_no_manifest() {
 fn missing_metadata() {
     check_error(
         Params::test("no-license"),
-        expect!["package `mypkg` is missing a license field"],
+        expect![[r#"
+            package `mypkg` is missing a license field
+        "#]],
+        expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+        "#]],
     );
     check_error(
         Params::test("no-description"),
-        expect!["package `mypkg` is missing a description field"],
+        expect![[r#"
+            package `mypkg` is missing a description field
+        "#]],
+        expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
+            ::endgroup::
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+        "#]],
     );
 }
 
@@ -827,6 +873,21 @@ fn changelog_shared() {
             - shared changelog for `derive` and `shared`
             EOF
             PUBLISH: 0.00ns
+            ::endgroup::
+        "#]],
+    );
+}
+
+#[test]
+fn changelog_version_missing() {
+    check_error(
+        Params::test("changelog-version-missing"),
+        expect![[r#"
+            changelog at 'sludge-cicd-test-projects/changelog-version-missing/CHANGELOG.md' does not contain an entry for mypkg@0.1.1
+        "#]],
+        expect![[r#"
+            ::group::INIT
+            INIT: 0.00ns
             ::endgroup::
         "#]],
     );
