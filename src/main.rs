@@ -201,9 +201,6 @@ impl Params {
 
     fn step_publish(&mut self) -> Result<()> {
         let current_branch = self.shell_output("git branch --show-current")?;
-        if &current_branch != "main" {
-            return Ok(());
-        }
         let _s = Section::new("PUBLISH");
 
         let tags_string = self.shell_output("git tag --list")?;
@@ -252,6 +249,10 @@ impl Params {
             println!("no `CRATES_IO_TOKEN` set, skipping autopublish step");
             return Ok(());
         };
+        if &current_branch != "main" {
+            println!("not on `main` branch, skipping autopublish step");
+            return Ok(());
+        }
 
         for Package { name, version, .. } in &to_publish {
             // If there is neither a `$package-v$version` tag, nor a `v$version` tag, the package
