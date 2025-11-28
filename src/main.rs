@@ -206,17 +206,12 @@ impl Params {
         }
         let _s = Section::new("PUBLISH");
 
-        let Some(token) = self.crates_io_token.clone() else {
-            println!("no `CRATES_IO_TOKEN` set, skipping autopublish step");
-            return Ok(());
-        };
-
         let tags_string = self.shell_output("git tag --list")?;
         let tags = tags_string.split_whitespace().collect::<Vec<_>>();
         println!("existing git tags: {tags:?}");
 
         let workspace = Workspace::get(self.cwd.clone())?;
-        let packages = workspace.find_packages()?;
+        let mut packages = workspace.find_packages()?;
         if packages.is_empty() {
             bail!("no publishable packages found in '{}'", self.cwd.display());
         }
@@ -231,7 +226,9 @@ impl Params {
             || !same_version
             || tags.iter().any(|tag| tag.ends_with(&packages[0].version));
 
-        let mut to_publish = packages
+        self.extract_release_notes(&mut packages, &workspace)?;
+
+        let to_publish = packages
             .into_iter()
             .filter(|Package { name, version, .. }| {
                 !tags.contains(&&*format!("v{version}"))
@@ -251,7 +248,10 @@ impl Params {
             to_publish
         );
 
-        self.extract_release_notes(&mut to_publish, &workspace)?;
+        let Some(token) = self.crates_io_token.clone() else {
+            println!("no `CRATES_IO_TOKEN` set, skipping autopublish step");
+            return Ok(());
+        };
 
         for Package { name, version, .. } in &to_publish {
             // If there is neither a `$package-v$version` tag, nor a `v$version` tag, the package
@@ -259,10 +259,7 @@ impl Params {
             // If all publishable packages are at the same version, and no tag that ends in that
             // version exists, we'll use a single collective `v$version` tag for all packages.
 
-            // NB: we use `--no-verify` because we might build the workspace crates out of
-            // order, so a dependency might not be on crates.io when its dependents are
-            // verified. This isn't easily fixable without pulling in dependencies and getting
-            // the package graph somehow.
+            // NB: we use `--no-verify` because we've already tested the package earlier.
             println!("publishing {name}@{version}");
             shell(&format!(
                 "cargo publish --no-verify -p {name} --token {token}"
@@ -469,6 +466,10 @@ impl Workspace {
         })
     }
 
+    /// Enumerates all publishable packages in the workspace.
+    ///
+    /// A package is considered publishable if it does not set `publish = false` and it contains a
+    /// `package.version` key.
     fn find_packages(&self) -> Result<Vec<Package>> {
         fn recurse(
             dir: PathBuf,
