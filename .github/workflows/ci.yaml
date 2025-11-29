@@ -10,7 +10,49 @@ env:
 
 jobs:
   ci:
-    name: CI/CD
+    name: CI
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-latest
+            target: i686-unknown-linux-musl
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: Install Rust toolchain
+      run: rustup install stable --profile=minimal
+
+    - name: Install Rust target
+      run: rustup target add ${{ matrix.target }}
+
+    - name: Run
+      run: cargo run --release --target ${{ matrix.target }}
+
+    - name: Test `sudo` functionality
+      run: cargo run --release --target ${{ matrix.target }}
+      env:
+        CICD_SUDO: 1
+
+    - name: Prepare artifact
+      run: |
+        mv target/${{ matrix.target }}/release/sludge-cicd  ${{ matrix.target }}-cicd
+
+    - uses: actions/upload-artifact@v5
+      with:
+        name: ${{ matrix.target }}
+        path: ${{ matrix.target }}-cicd
+        if-no-files-found: error
+
+  cd:
+    name: Autopublish
+    needs: [ci]
     runs-on: ubuntu-latest
 
     permissions:
@@ -27,13 +69,14 @@ jobs:
     - name: Install Rust toolchain
       run: rustup install stable --profile=minimal
 
-    - name: Test `sudo` functionality
-      run: cargo run
-      env:
-        CICD_SUDO: 1
+    - uses: actions/download-artifact@v6
+      with:
+        path: target/dist/
+        merge-multiple: true
 
     - name: Test and Publish
       run: cargo run
       env:
         CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ATTACHMENTS_sludge-cicd: target/dist
