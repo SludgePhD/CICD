@@ -8,7 +8,7 @@ mod utils;
 use std::{
     env::{self, VarError},
     fmt::{self, Write as _},
-    fs,
+    fs::{self, File},
     io::{self, stdout, Write as _},
     path::PathBuf,
     process::{self, Command, ExitStatus, Stdio},
@@ -101,6 +101,8 @@ impl Pipeline {
         let mut packages = workspace.find_packages()?;
 
         extract_release_notes(&mut packages, &workspace)?;
+
+        println!("publishable packages in workspace: {:?}", packages);
 
         Ok(Self { params, packages })
     }
@@ -230,7 +232,11 @@ impl Pipeline {
                 self.params.cwd.display()
             );
         }
-        println!("publishable packages in workspace: {:?}", self.packages);
+
+        // We do this step here (instead of during `INIT`) so that the attachments can be generated
+        // by the build/test step, and before checking whether we have a crates.io token so that the
+        // attachments are always validated to exist.
+        extract_release_attachments(&mut self.packages)?;
 
         let same_version = self
             .packages
@@ -313,6 +319,16 @@ impl Pipeline {
                 let tag = format!("{name}-v{version}");
                 if let Some(relnotes) = release_notes {
                     shell_with_stdin(&format!("gh release create {tag} --notes-file -"), relnotes)?;
+
+                    if !package.release_attachments.is_empty() {
+                        let files = package
+                            .release_attachments
+                            .iter()
+                            .map(|p| p.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        shell(&format!("gh release upload {tag} {files}"))?;
+                    }
                 }
             }
         } else if to_publish.iter().any(|pkg| pkg.release_notes.is_some()) {
@@ -352,6 +368,16 @@ impl Pipeline {
                     &format!("gh release create {tag} --notes-file -"),
                     &relnotes,
                 )?;
+
+                let files = entries
+                    .iter()
+                    .flat_map(|pkg| pkg.release_attachments.iter())
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if !files.is_empty() {
+                    shell(&format!("gh release upload {tag} {files}"))?;
+                }
             } else {
                 eprintln!("::warning::`GITHUB_TOKEN` not set; cannot create GitHub release");
             }
@@ -427,6 +453,67 @@ fn extract_release_notes(packages: &mut [Package], workspace: &Workspace) -> Res
     Ok(())
 }
 
+fn extract_release_attachments(packages: &mut [Package]) -> Result<()> {
+    if cfg!(test) {
+        // The variables set in ci.yaml won't work for the test projects.
+        return Ok(());
+    }
+
+    for (k, v) in env::vars() {
+        let Some(pkg) = k.strip_prefix("ATTACHMENTS_") else {
+            continue;
+        };
+
+        let pkg = packages.iter_mut().find(|p| p.name == pkg).expect(&format!(
+            "`{k}` is set, but package {pkg} doesn't exist in the workspace"
+        ));
+        assert!(
+            pkg.release_notes.is_some(),
+            "cannot use `{k}` with a package that doesn't have release notes (as no release will be created)",
+        );
+        assert!(
+            !v.contains(' '),
+            "spaces are not allowed in release attachment file lists (from `{k}`)",
+        );
+
+        for file in v.split(':') {
+            let meta = fs::metadata(file).map_err(|e| format!("couldn't open `{file}`: {e}"))?;
+            if meta.file_type().is_dir() {
+                for res in fs::read_dir(file)? {
+                    let entry = res?;
+                    assert!(
+                        entry.metadata()?.file_type().is_file(),
+                        "`{}` was expected to be a file",
+                        entry.path().display()
+                    );
+                    pkg.release_attachments.push(entry.path());
+                }
+            } else {
+                pkg.release_attachments.push(file.into());
+            }
+        }
+
+        // Ensure all files can be read.
+        for file in &pkg.release_attachments {
+            File::open(file)?;
+        }
+
+        assert_ne!(
+            pkg.release_attachments.len(),
+            0,
+            "`{k}` is set but no files were found in `{v}`"
+        );
+        println!(
+            "package '{}' has {} release attachments: {:?}",
+            pkg.name,
+            pkg.release_attachments.len(),
+            pkg.release_attachments,
+        );
+    }
+
+    Ok(())
+}
+
 impl Params {
     fn shell_output(&mut self, cmd: &str) -> Result<String> {
         match &mut self.mock_output {
@@ -462,6 +549,7 @@ struct Package {
     changelog_path: Option<PathBuf>,
     /// Set to the changelog contents for this package version when we're about to publish it.
     release_notes: Option<String>,
+    release_attachments: Vec<PathBuf>,
     /// Contents of the package's `Cargo.toml`.
     manifest: String,
 }
@@ -569,6 +657,7 @@ impl Workspace {
                         version,
                         changelog_path: changelog,
                         release_notes: None,
+                        release_attachments: Vec::new(),
                         manifest,
                     });
                 }

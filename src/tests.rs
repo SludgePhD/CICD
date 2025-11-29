@@ -184,6 +184,7 @@ fn missing_metadata() {
         "#]],
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [mypkg@1.2.3]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -207,6 +208,7 @@ fn missing_metadata() {
         "#]],
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [mypkg@1.2.3]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -240,6 +242,7 @@ fn single_package() {
         Params::test("single-package"),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [single-package@2.2.2]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -256,7 +259,6 @@ fn single_package() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            publishable packages in workspace: [single-package@2.2.2]
             1 package needs publishing: [single-package@2.2.2]
             publishing single-package@2.2.2
             > cargo publish --no-verify -p single-package --token dummy-token
@@ -270,6 +272,7 @@ fn single_package() {
         Params::test("single-package").with_tags(&["v2.2.1"]),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [single-package@2.2.2]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -286,7 +289,6 @@ fn single_package() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: ["v2.2.1"]
-            publishable packages in workspace: [single-package@2.2.2]
             1 package needs publishing: [single-package@2.2.2]
             publishing single-package@2.2.2
             > cargo publish --no-verify -p single-package --token dummy-token
@@ -304,6 +306,7 @@ fn single_package_existing_tag() {
         Params::test("single-package").with_tags(&["v2.2.2"]),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [single-package@2.2.2]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -320,7 +323,6 @@ fn single_package_existing_tag() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: ["v2.2.2"]
-            publishable packages in workspace: [single-package@2.2.2]
             no packages need publishing, done
             PUBLISH: 0.00ns
             ::endgroup::
@@ -330,6 +332,7 @@ fn single_package_existing_tag() {
         Params::test("single-package").with_tags(&["single-package-v2.2.2"]),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [single-package@2.2.2]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -346,7 +349,6 @@ fn single_package_existing_tag() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: ["single-package-v2.2.2"]
-            publishable packages in workspace: [single-package@2.2.2]
             no packages need publishing, done
             PUBLISH: 0.00ns
             ::endgroup::
@@ -360,6 +362,7 @@ fn single_package_sudo() {
         Params::test("single-package").with_sudo(),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [single-package@2.2.2]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -376,7 +379,6 @@ fn single_package_sudo() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            publishable packages in workspace: [single-package@2.2.2]
             1 package needs publishing: [single-package@2.2.2]
             publishing single-package@2.2.2
             > cargo publish --no-verify -p single-package --token dummy-token
@@ -413,6 +415,7 @@ fn workspace_inheritance() {
         Params::test("workspace-inheritance"),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [version-normal@4.5.6, version-workspace@555.222.333]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -429,7 +432,6 @@ fn workspace_inheritance() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            publishable packages in workspace: [version-normal@4.5.6, version-workspace@555.222.333]
             2 packages need publishing: [version-normal@4.5.6, version-workspace@555.222.333]
             publishing version-normal@4.5.6
             > cargo publish --no-verify -p version-normal --token dummy-token
@@ -446,6 +448,7 @@ fn workspace_inheritance() {
         Params::test("workspace-inheritance2"),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [version-normal@4.5.6, version-workspace@555.222.333]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -462,7 +465,6 @@ fn workspace_inheritance() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            publishable packages in workspace: [version-normal@4.5.6, version-workspace@555.222.333]
             2 packages need publishing: [version-normal@4.5.6, version-workspace@555.222.333]
             publishing version-normal@4.5.6
             > cargo publish --no-verify -p version-normal --token dummy-token
@@ -494,6 +496,7 @@ fn synced_derive() {
         expect![[r#"
             ::group::INIT
             mylib@0.1.2 depends on mylib-derive@0.1.2
+            publishable packages in workspace: [mylib-derive@0.1.2, mylib@0.1.2]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -510,7 +513,6 @@ fn synced_derive() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            publishable packages in workspace: [mylib-derive@0.1.2, mylib@0.1.2]
             2 packages need publishing: [mylib-derive@0.1.2, mylib@0.1.2]
             publishing mylib-derive@0.1.2
             > cargo publish --no-verify -p mylib-derive --token dummy-token
@@ -527,6 +529,7 @@ fn synced_derive() {
         expect![[r#"
             ::group::INIT
             mylib@0.1.2 depends on mylib-derive@0.1.2
+            publishable packages in workspace: [mylib-derive@0.1.2, mylib@0.1.2]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -543,7 +546,6 @@ fn synced_derive() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: ["v0.1.2"]
-            publishable packages in workspace: [mylib-derive@0.1.2, mylib@0.1.2]
             no packages need publishing, done
             PUBLISH: 0.00ns
             ::endgroup::
@@ -554,6 +556,7 @@ fn synced_derive() {
         expect![[r#"
             ::group::INIT
             mylib@0.1.2 depends on mylib-derive@0.1.2
+            publishable packages in workspace: [mylib-derive@0.1.2, mylib@0.1.2]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -570,7 +573,6 @@ fn synced_derive() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: ["mylib-v0.1.2"]
-            publishable packages in workspace: [mylib-derive@0.1.2, mylib@0.1.2]
             1 package needs publishing: [mylib-derive@0.1.2]
             publishing mylib-derive@0.1.2
             > cargo publish --no-verify -p mylib-derive --token dummy-token
@@ -591,6 +593,7 @@ fn dep_graph() {
             b@0.1.0 depends on a@0.1.0
             b@0.1.0 depends on d@0.1.0
             c@0.1.0 depends on a@0.1.0
+            publishable packages in workspace: [a@0.1.0, d@0.1.0, b@0.1.0, c@0.1.0]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -607,7 +610,6 @@ fn dep_graph() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            publishable packages in workspace: [a@0.1.0, d@0.1.0, b@0.1.0, c@0.1.0]
             4 packages need publishing: [a@0.1.0, d@0.1.0, b@0.1.0, c@0.1.0]
             publishing a@0.1.0
             > cargo publish --no-verify -p a --token dummy-token
@@ -633,6 +635,7 @@ fn nonvirtual_workspace_changelog() {
         Params::test("nonvirtual-workspace-changelog"),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [subpackage@1.0.0, toplevel@1.0.0]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -649,7 +652,6 @@ fn nonvirtual_workspace_changelog() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            publishable packages in workspace: [subpackage@1.0.0, toplevel@1.0.0]
             2 packages need publishing: [subpackage@1.0.0, toplevel@1.0.0]
             publishing subpackage@1.0.0
             > cargo publish --no-verify -p subpackage --token dummy-token
@@ -686,6 +688,7 @@ fn nonvirtual_workspace_changelog() {
         Params::test("nonvirtual-workspace-changelog").with_tags(&["subpackage-v1.0.0"]),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [subpackage@1.0.0, toplevel@1.0.0]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -702,7 +705,6 @@ fn nonvirtual_workspace_changelog() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: ["subpackage-v1.0.0"]
-            publishable packages in workspace: [subpackage@1.0.0, toplevel@1.0.0]
             1 package needs publishing: [toplevel@1.0.0]
             publishing toplevel@1.0.0
             > cargo publish --no-verify -p toplevel --token dummy-token
@@ -731,6 +733,7 @@ fn single_package_changelog() {
         Params::test("single-package-changelog"),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [mypackage@0.1.0]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -747,7 +750,6 @@ fn single_package_changelog() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            publishable packages in workspace: [mypackage@0.1.0]
             1 package needs publishing: [mypackage@0.1.0]
             publishing mypackage@0.1.0
             > cargo publish --no-verify -p mypackage --token dummy-token
@@ -768,6 +770,7 @@ fn multiple_changelogs() {
         Params::test("workspace-with-package-changelog"),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [a@0.1.0, b@0.1.0]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -784,7 +787,6 @@ fn multiple_changelogs() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            publishable packages in workspace: [a@0.1.0, b@0.1.0]
             2 packages need publishing: [a@0.1.0, b@0.1.0]
             publishing a@0.1.0
             > cargo publish --no-verify -p a --token dummy-token
@@ -811,6 +813,7 @@ fn changelog_shared() {
         Params::test("changelog-shared"),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [derive@0.1.0, shared@0.1.0]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -827,7 +830,6 @@ fn changelog_shared() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: []
-            publishable packages in workspace: [derive@0.1.0, shared@0.1.0]
             2 packages need publishing: [derive@0.1.0, shared@0.1.0]
             publishing derive@0.1.0
             > cargo publish --no-verify -p derive --token dummy-token
@@ -847,6 +849,7 @@ fn changelog_shared() {
         Params::test("changelog-shared").with_tags(&["shared-v0.1.0"]),
         expect![[r#"
             ::group::INIT
+            publishable packages in workspace: [derive@0.1.0, shared@0.1.0]
             INIT: 0.00ns
             ::endgroup::
             ::group::BUILD
@@ -863,7 +866,6 @@ fn changelog_shared() {
             ::endgroup::
             ::group::PUBLISH
             existing git tags: ["shared-v0.1.0"]
-            publishable packages in workspace: [derive@0.1.0, shared@0.1.0]
             1 package needs publishing: [derive@0.1.0]
             publishing derive@0.1.0
             > cargo publish --no-verify -p derive --token dummy-token
