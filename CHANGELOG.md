@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.31
+
+- Support specifying release artifacts with `ATTACHMENTS_<pkgname>`.
+- Check a bunch of things on every tool run, rather than just when publishing.
+- Check that all publishable packages have the metadata required by crates.io.
+
 ## v0.1.30
 
 - Support additional Cargo.toml syntax for inheriting package versions from the workspace manifest.
