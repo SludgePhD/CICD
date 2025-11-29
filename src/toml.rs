@@ -28,23 +28,33 @@ impl<'a> fmt::Debug for Toml<'a> {
 impl<'a> Toml<'a> {
     pub fn get_field(&self, name: &str) -> Result<Value<'a>> {
         for line in self.0.lines() {
-            let words = line.split_ascii_whitespace().collect::<Vec<_>>();
-            match words.as_slice() {
-                [n, "=", v, ..] if n.trim() == name => {
+            if let Some((n, v)) = line.split_once('=') {
+                if n.trim() == name {
                     let v = v.trim();
                     if v.starts_with('"') {
-                        assert!(
-                            v.ends_with('"'),
-                            "unclosed string, or trailing comment in '{line}'"
-                        );
-                        return Ok(Value::Str(&v[1..v.len() - 1]));
+                        let mut esc = false;
+                        let mut end = None;
+                        for (i, c) in v[1..].char_indices() {
+                            if c == '\\' {
+                                esc = true;
+                            } else {
+                                if c == '"' && !esc {
+                                    end = Some(i);
+                                    break;
+                                }
+                                esc = false;
+                            }
+                        }
+                        let Some(end) = end else {
+                            panic!("unclosed string in '{line}'");
+                        };
+                        return Ok(Value::Str(&v[1..end + 1]));
                     } else if v.split(|v: char| !v.is_alphanumeric()).next().unwrap() == "true" {
                         return Ok(Value::Bool(true));
                     } else if v.split(|v: char| !v.is_alphanumeric()).next().unwrap() == "false" {
                         return Ok(Value::Bool(false));
                     }
                 }
-                _ => (),
             }
         }
         Err(format!(
