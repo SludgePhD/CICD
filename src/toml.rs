@@ -63,7 +63,7 @@ impl<'a> Toml<'a> {
         ))?
     }
 
-    pub fn sections(&self) -> Vec<(&str, Toml<'_>)> {
+    pub fn sections(&self) -> Vec<(&str, Toml<'a>)> {
         // `Lines` has no stable `remainder` or `as_str` method, so we have to do this manually...
         let mut remainder = self.0;
 
@@ -96,7 +96,7 @@ impl<'a> Toml<'a> {
         out
     }
 
-    pub fn section(&self, name: &str) -> Option<Toml<'_>> {
+    pub fn section(&self, name: &str) -> Option<Toml<'a>> {
         self.sections()
             .into_iter()
             .find_map(|(n, toml)| if name == n { Some(toml) } else { None })

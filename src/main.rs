@@ -618,48 +618,48 @@ impl Workspace {
             toml.push("Cargo.toml");
             if toml.exists() {
                 let manifest = fs::read_to_string(&toml)?;
-                let toml = Toml(&manifest);
-                // Filter out virtual manifests, those with `publish = false` set, and those that lack a
-                // `version` field.
-                if manifest.contains("[package]")
-                    && !matches!(toml.get_field("publish"), Ok(Value::Bool(false)))
-                    && (toml.get_field("version").is_ok()
-                        || toml.get_field("version.workspace").is_ok())
-                {
-                    let name = toml
-                        .get_field("name")?
-                        .as_str()
-                        .ok_or("package name is not a string")?
-                        .to_string();
-                    let version = match toml.get_field("version") {
-                        Ok(version) => version
-                            .as_str()
-                            .ok_or("version is not a string")?
-                            .to_string(),
-                        Err(e) => match &workspace.version {
-                            Some(version) => version.clone(),
-                            None => return Err(e),
-                        },
-                    };
-
-                    let mut changelog = dir.clone();
-                    changelog.push("CHANGELOG.md");
-                    let changelog = if changelog.exists()
-                        && Some(&*changelog) != workspace.changelog.as_deref()
+                if let Some(toml) = Toml(&manifest).section("package") {
+                    // Filter out virtual manifests, those with `publish = false` set, and those that lack a
+                    // `version` field.
+                    if !matches!(toml.get_field("publish"), Ok(Value::Bool(false)))
+                        && (toml.get_field("version").is_ok()
+                            || toml.get_field("version.workspace").is_ok())
                     {
-                        Some(changelog)
-                    } else {
-                        None
-                    };
+                        let name = toml
+                            .get_field("name")?
+                            .as_str()
+                            .ok_or("package name is not a string")?
+                            .to_string();
+                        let version = match toml.get_field("version") {
+                            Ok(version) => version
+                                .as_str()
+                                .ok_or("version is not a string")?
+                                .to_string(),
+                            Err(e) => match &workspace.version {
+                                Some(version) => version.clone(),
+                                None => return Err(e),
+                            },
+                        };
 
-                    out.push(Package {
-                        name,
-                        version,
-                        changelog_path: changelog,
-                        release_notes: None,
-                        release_attachments: Vec::new(),
-                        manifest,
-                    });
+                        let mut changelog = dir.clone();
+                        changelog.push("CHANGELOG.md");
+                        let changelog = if changelog.exists()
+                            && Some(&*changelog) != workspace.changelog.as_deref()
+                        {
+                            Some(changelog)
+                        } else {
+                            None
+                        };
+
+                        out.push(Package {
+                            name,
+                            version,
+                            changelog_path: changelog,
+                            release_notes: None,
+                            release_attachments: Vec::new(),
+                            manifest,
+                        });
+                    }
                 }
             }
 

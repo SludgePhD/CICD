@@ -228,6 +228,16 @@ fn missing_metadata() {
 }
 
 #[test]
+fn no_version_non_publishable() {
+    check_find_packages(
+        "single-package-nonpublish",
+        expect![[r#"
+            []
+        "#]],
+    );
+}
+
+#[test]
 fn single_package() {
     check_find_packages(
         "single-package",
