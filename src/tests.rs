@@ -1,6 +1,6 @@
 //! Test support.
 
-use std::{cell::RefCell, path::PathBuf};
+use std::{cell::RefCell, env, path::PathBuf};
 
 use expect_test::{expect, Expect};
 
@@ -114,12 +114,16 @@ impl Params {
     }
 }
 
+fn redact(s: &str) -> String {
+    s.replace(&env::current_dir().unwrap().display().to_string(), "<CWD>")
+}
+
 fn check_output(params: Params, expect: Expect) {
     OUTPUT.replace(String::new());
 
     Pipeline::new(params).unwrap().run().unwrap();
 
-    let output = OUTPUT.take();
+    let output = redact(&OUTPUT.take());
     expect.assert_eq(&output);
 }
 fn check_error(params: Params, expected_error: Expect, expected_output: Expect) {
@@ -130,13 +134,13 @@ fn check_error(params: Params, expected_error: Expect, expected_output: Expect) 
         Err(e) => e,
     };
 
-    let mut string = error.to_string();
+    let mut string = redact(&error.to_string());
     if !string.ends_with('\n') {
         string.push('\n');
     }
     expected_error.assert_eq(&string);
 
-    let output = OUTPUT.take();
+    let output = redact(&OUTPUT.take());
     expected_output.assert_eq(&output);
 }
 
@@ -239,7 +243,7 @@ fn no_version_non_publishable() {
     check_error(
         Params::test("single-package-nonpublish"),
         expect![[r#"
-            no publishable packages found in '/home/sludge/code/CICD/sludge-cicd-test-projects/single-package-nonpublish'
+            no publishable packages found in '<CWD>/sludge-cicd-test-projects/single-package-nonpublish'
         "#]],
         expect![[r#"
             ::group::INIT
