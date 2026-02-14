@@ -53,6 +53,7 @@ fn try_main() -> Result<()> {
     let check_only = env::var_os("CICD_CHECK_ONLY").is_some();
     let skip_docs = env::var_os("CICD_SKIP_DOCS").is_some();
     let sudo = env::var_os("CICD_SUDO").is_some();
+    let no_publish = env::var_os("CICD_NO_PUBLISH").is_some();
     let commit = env::var("GITHUB_SHA")?;
     let cargo_doc_flags = match env::var("CICD_CARGO_DOC_FLAGS") {
         Ok(s) => s,
@@ -70,6 +71,7 @@ fn try_main() -> Result<()> {
         check_only,
         skip_docs,
         sudo,
+        no_publish,
         mock_output: None,
     };
     Pipeline::new(params)?.run()
@@ -85,11 +87,21 @@ struct Params {
     check_only: bool,
     skip_docs: bool,
     sudo: bool,
+    no_publish: bool,
     mock_output: Option<Vec<(&'static str, String)>>,
 }
 
 struct Pipeline {
     params: Params,
+    /// List of publishable packages in workspace.
+    ///
+    /// "Publishable" means:
+    ///
+    /// - Has a `version` field (or `version.workspace`).
+    /// - Does not set `publish = false`.
+    ///
+    /// A package does not need to have a version that hasn't been published yet to be in this
+    /// list.
     packages: Vec<Package>,
 }
 
@@ -202,6 +214,12 @@ impl Pipeline {
     }
 
     fn step_manifest_check(&self) -> Result<()> {
+        if self.params.no_publish {
+            // There are no requirements beyond what `cargo check`/`cargo test` require if we are
+            // not publishing anything.
+            return Ok(());
+        }
+
         for Package { name, manifest, .. } in &self.packages {
             let toml = Toml(manifest);
             if !toml.get_field("description").is_ok()
@@ -215,6 +233,15 @@ impl Pipeline {
             }
         }
 
+        if self.packages.is_empty() {
+            // This can happen if no package specifies a version (because nothing is intended to be
+            // published), so we don't do this check if `CICD_NO_PUBLISH` is set.
+            bail!(
+                "no publishable packages found in '{}'",
+                self.params.cwd.display()
+            );
+        }
+
         Ok(())
     }
 
@@ -225,13 +252,6 @@ impl Pipeline {
         let tags_string = self.params.shell_output("git tag --list")?;
         let tags = tags_string.split_whitespace().collect::<Vec<_>>();
         println!("existing git tags: {tags:?}");
-
-        if self.packages.is_empty() {
-            bail!(
-                "no publishable packages found in '{}'",
-                self.params.cwd.display()
-            );
-        }
 
         // We do this step here (instead of during `INIT`) so that the attachments can be generated
         // by the build/test step, and before checking whether we have a crates.io token so that the

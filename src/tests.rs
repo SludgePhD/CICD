@@ -82,6 +82,7 @@ impl Params {
             check_only: false,
             skip_docs: false,
             sudo: false,
+            no_publish: false,
             mock_output: Some(vec![
                 ("git status --porcelain", "".into()),
                 ("git rev-parse HEAD", test_commit),
@@ -233,6 +234,60 @@ fn no_version_non_publishable() {
         "single-package-nonpublish",
         expect![[r#"
             []
+        "#]],
+    );
+    check_error(
+        Params::test("single-package-nonpublish"),
+        expect![[r#"
+            no publishable packages found in '/home/sludge/code/CICD/sludge-cicd-test-projects/single-package-nonpublish'
+        "#]],
+        expect![[r#"
+            ::group::INIT
+            publishable packages in workspace: []
+            INIT: 0.00ns
+            ::endgroup::
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+        "#]],
+    );
+
+    check_output(
+        Params {
+            no_publish: true,
+            ..Params::test("single-package-nonpublish")
+        },
+        expect![[r#"
+            ::group::INIT
+            publishable packages in workspace: []
+            INIT: 0.00ns
+            ::endgroup::
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+            ::group::PUBLISH
+            existing git tags: []
+            no packages need publishing, done
+            PUBLISH: 0.00ns
+            ::endgroup::
         "#]],
     );
 }

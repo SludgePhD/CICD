@@ -42,4 +42,5 @@ Variable | Meaning
 `CICD_SKIP_DOCS`  | If set to any value, `cargo doc` will not be run to check documentation.
 `CICD_SUDO`       | If set to any value, tests will be executed (but not built) using `sudo`. OS must be configured to allow passwordless `sudo`.
 `CICD_CARGO_DOC_FLAGS` | Overrides the arguments passed to `cargo doc` (by default, all arguments passed to `sludge-cicd` will be passed).
+`CICD_NO_PUBLISH` | Does not invoke `cargo publish`, and does not require any crates in the workspace to be publishable.
 `ATTACHMENTS_<pkgname>` | `:`-separated list of files (or folders with files) to attach to GitHub releases of Cargo package `<pkgname>`.
