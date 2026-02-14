@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.33
+
+- Add `CICD_NO_PUBLISH` for turning off all additional manifest/workspace checks.
+
 ## v0.1.32
 
 - Treat packages as non-published if they use `version = …` in a dependency section, but not in `[package]`.
