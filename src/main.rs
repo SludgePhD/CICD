@@ -228,8 +228,12 @@ impl Pipeline {
                 bail!("package `{name}` is missing a description field");
             }
 
-            if !toml.get_field("license").is_ok() && !toml.get_field("license.workspace").is_ok() {
-                bail!("package `{name}` is missing a license field");
+            if !toml.get_field("license").is_ok()
+                && !toml.get_field("license-file").is_ok()
+                && !toml.get_field("license.workspace").is_ok()
+                && !toml.get_field("license-file.workspace").is_ok()
+            {
+                bail!("package `{name}` is missing a license or license-file field");
             }
         }
 

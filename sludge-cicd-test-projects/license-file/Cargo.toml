@@ -1,0 +1,5 @@
+[package]
+name = "license-file"
+version = "2.2.2"
+license-file = "COPYING"
+description = "my description"

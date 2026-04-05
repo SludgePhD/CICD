@@ -185,7 +185,7 @@ fn missing_metadata() {
     check_error(
         Params::test("no-license"),
         expect![[r#"
-            package `mypkg` is missing a license field
+            package `mypkg` is missing a license or license-file field
         "#]],
         expect![[r#"
             ::group::INIT
@@ -361,6 +361,42 @@ fn single_package() {
             1 package needs publishing: [single-package@2.2.2]
             publishing single-package@2.2.2
             > cargo publish --no-verify -p single-package --token dummy-token
+            > git tag v2.2.2
+            > git push --tags
+            PUBLISH: 0.00ns
+            ::endgroup::
+        "#]],
+    );
+}
+
+#[test]
+fn license_file() {
+    // Check that a package that sets `license-file`, but not `license`, is accepted.
+
+    check_output(
+        Params::test("license-file"),
+        expect![[r#"
+            ::group::INIT
+            publishable packages in workspace: [license-file@2.2.2]
+            INIT: 0.00ns
+            ::endgroup::
+            ::group::BUILD
+            > cargo test --workspace --no-run
+            BUILD: 0.00ns
+            ::endgroup::
+            ::group::BUILD_DOCS
+            > cargo doc --workspace
+            BUILD_DOCS: 0.00ns
+            ::endgroup::
+            ::group::TEST
+            > cargo test --workspace
+            TEST: 0.00ns
+            ::endgroup::
+            ::group::PUBLISH
+            existing git tags: []
+            1 package needs publishing: [license-file@2.2.2]
+            publishing license-file@2.2.2
+            > cargo publish --no-verify -p license-file --token dummy-token
             > git tag v2.2.2
             > git push --tags
             PUBLISH: 0.00ns
